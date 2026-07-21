@@ -7,3 +7,9 @@ dist-ssr
 .env
 .env.local
 *.log
+
+# Backend
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/

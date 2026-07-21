@@ -2,17 +2,16 @@
  * The app's only data-access entry point. Components import from here and
  * never from `./mock/*` directly.
  *
- * Swapping to the real backend:
- *   1. Add `./http/client.ts` exporting an object typed `CustodianApi` whose
- *      methods `fetch('/api/...')` and return the same shapes.
- *   2. Change the `api` binding below to point at it.
- * Nothing else in `src/` needs to change — that's the whole point of this file.
+ * Talks to the FastAPI backend over `/api`. Set `VITE_USE_MOCK=true` to run
+ * against the in-memory mock instead — useful for front-end work without the
+ * backend or database running.
  */
 
 import type { CustodianApi, ImportPreview, TransactionInput } from './types'
 import { mockApi } from './mock/client'
+import { httpApi } from './http/client'
 
-export const api: CustodianApi = mockApi
+export const api: CustodianApi = import.meta.env.VITE_USE_MOCK === 'true' ? mockApi : httpApi
 
 export const getNetWorth = () => api.getNetWorth()
 export const getHoldings = () => api.getHoldings()

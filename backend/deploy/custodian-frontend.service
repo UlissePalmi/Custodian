@@ -1,0 +1,21 @@
+[Unit]
+Description=Custodian front end (Vite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ulisse
+Group=ulisse
+WorkingDirectory=/home/ulisse/Documents/Custodian
+# Vite reads the repo's .env at startup, so VITE_API_BASE_URL takes effect on
+# restart — no rebuild. Host binding comes from vite.config.ts.
+ExecStart=/usr/bin/npm run dev
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

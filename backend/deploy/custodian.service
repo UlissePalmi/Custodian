@@ -1,0 +1,24 @@
+[Unit]
+Description=Custodian — personal wealth management
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ulisse
+Group=ulisse
+WorkingDirectory=/home/ulisse/Documents/Custodian/backend
+EnvironmentFile=/home/ulisse/Documents/Custodian/backend/.env
+# 0.0.0.0 so the app is reachable over the LAN and Tailscale, not just the Pi.
+ExecStart=/home/ulisse/Documents/Custodian/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+# The service only ever needs to read the repo and talk to PostgreSQL.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
