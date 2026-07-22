@@ -123,9 +123,12 @@ point `TEST_DATABASE_URL` at the real one.
 
 ## Notes
 
-* Price quotes come from yfinance, cached for 15 minutes and only refreshed
-  near US market hours. If the Pi is offline the last cached price is served
-  with its real timestamp, which the dashboard displays.
+* Price quotes come from yfinance (tickers) or, for holdings entered by ISIN,
+  from Tradegate → Börse Frankfurt → onvista, first venue to answer wins.
+  Quotes are cached for 15 minutes and only refreshed near US market hours.
+  If the Pi is offline the last cached price is served with its real
+  timestamp, which the dashboard displays. ISIN prices are percent of face
+  value, so enter such a holding's quantity as face value / 100.
 * The ledger starts in July 2026 and the month picker ends in December 2027.
   Extending it means changing `LEDGER_END` in both `backend/app/months.py` and
   `src/utils/months.ts`.
