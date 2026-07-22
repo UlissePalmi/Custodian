@@ -36,7 +36,7 @@ Tests need the `custodian_test` database (they truncate it between tests — nev
 
 **Shared logic is duplicated in two languages on purpose.** `backend/app/months.py` ports `src/utils/months.ts` (including `LEDGER_START`/`LEDGER_END`) and `backend/app/money.py` ports `roundCents`. Both sides round at every aggregation step so totals never drift. Extending the ledger range means editing both.
 
-**Prices** (`services/quotes.py`) are fetched from yfinance on read, cached in `price_quotes` with a 15-minute TTL, and only refreshed near US market hours. Any failure serves the cached row with its real `as_of` — the front end displays that timestamp, so a stale quote is visible rather than silently presented as live.
+**Prices** (`services/quotes.py`) are fetched on read, cached in `price_quotes` with a 15-minute TTL, and only refreshed near US market hours. Tickers go to yfinance; a ticker that matches the ISIN pattern (e.g. a Treasury bond held as `US912810SN90`) is instead priced from Tradegate's JSON endpoint, which quotes bonds as percent of face value — so such a holding's `quantity` is face value / 100, and it has no YTD figure. Any failure serves the cached row with its real `as_of` — the front end displays that timestamp, so a stale quote is visible rather than silently presented as live.
 
 Backend layout is conventional: `models/` (SQLAlchemy 2.0), `schemas/` (Pydantic v2, all deriving from `CamelModel`), `services/` (all business logic), `routers/` (thin HTTP wrappers). Holdings and account balances have admin endpoints but no UI yet — they are managed with curl (see DEPLOY.md).
 
