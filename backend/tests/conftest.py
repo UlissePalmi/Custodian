@@ -85,3 +85,8 @@ def checking_csv() -> bytes:
 @pytest.fixture
 def credit_card_xlsx() -> bytes:
     return (FIXTURES / "chase_credit_2026-08.xlsx").read_bytes()
+
+
+@pytest.fixture
+def spending_report_pdf() -> bytes:
+    return (FIXTURES / "chase_spending_report_2026.pdf").read_bytes()

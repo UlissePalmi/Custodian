@@ -20,6 +20,7 @@ class ProposedTransaction(CamelModel):
     category_id: str
     kind: Literal["income", "expense"]
     flagged_for_review: bool
+    already_imported: bool = False
     include: bool = True
 
 

@@ -292,8 +292,8 @@ export function readNetWorth(): NetWorthSummary {
 
   const rawAllocation: Array<{ assetClass: string; label: string; value: number }> = [
     { assetClass: 'stocks', label: 'Stocks', value: stocks },
-    { assetClass: 'cash', label: 'Cash', value: cash },
     { assetClass: 'bonds', label: 'Bonds', value: bonds },
+    { assetClass: 'cash', label: 'Cash', value: cash },
   ]
   const allocation: AllocationSlice[] = rawAllocation.map((slice) => ({
     ...slice,

@@ -15,6 +15,7 @@ from app.errors import ApiError
 from app.models import Account, Holding
 from app.money import round_cents
 from app.schemas.portfolio import (
+    AccountCreate,
     AccountInput,
     AccountOut,
     HoldingInput,
@@ -107,6 +108,20 @@ def list_accounts(db: Session = Depends(get_db)):
     return list(db.scalars(select(Account).order_by(Account.id)))
 
 
+@router.post("/accounts", response_model=AccountOut, status_code=201)
+def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
+    account = Account(
+        name=payload.name.strip(),
+        type=payload.type.strip(),
+        balance=round_cents(Decimal(str(payload.balance))),
+        currency=payload.currency.strip().lower(),
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 @router.put("/accounts/{account_id}", response_model=AccountOut)
 def update_account(account_id: int, payload: AccountInput, db: Session = Depends(get_db)):
     account = db.get(Account, account_id)
@@ -118,6 +133,8 @@ def update_account(account_id: int, payload: AccountInput, db: Session = Depends
         account.type = payload.type.strip()
     if payload.balance is not None:
         account.balance = round_cents(Decimal(str(payload.balance)))
+    if payload.currency is not None:
+        account.currency = payload.currency.strip().lower()
     db.commit()
     db.refresh(account)
     return account

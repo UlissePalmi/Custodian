@@ -64,7 +64,7 @@ export default function UploadButton({
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.xls,.xlsx"
+        accept=".csv,.xls,.xlsx,.pdf"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0]

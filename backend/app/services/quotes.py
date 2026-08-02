@@ -1,9 +1,12 @@
 """Delayed price feed.
 
-Quotes are refreshed lazily: a read checks the cache's age and only calls out
-when it is stale and the market is plausibly open. Every failure path falls
-back to the cached row with its real `as_of`, so an offline Pi shows slightly
-old prices rather than an error — the front end displays the timestamp.
+Quotes are refreshed lazily on read. While the market is open, a quote is
+good for `quote_ttl_minutes`. Once the market has closed, the cache is only
+good until the *next* close — so the first read after today's close always
+fetches the final closing price, then goes quiet until the following
+session's close. Every failure path falls back to the cached row with its
+real `as_of`, so an offline Pi shows slightly old prices rather than an
+error — the front end displays the timestamp.
 """
 
 import json
@@ -55,21 +58,46 @@ def _is_stale(quote: PriceQuote | None, now: datetime) -> bool:
     return age > timedelta(minutes=settings.quote_ttl_minutes)
 
 
-def get_quotes(db: Session, tickers: list[str]) -> dict[str, PriceQuote]:
-    """Cached quotes for `tickers`, refreshed first if stale."""
+def _last_close_at_or_before(now_et: datetime) -> datetime:
+    """The most recent market-close instant at or before `now_et` (ET).
+
+    Walks back one calendar day at a time until it lands on a weekday whose
+    close time has already passed — Friday's close on a Saturday or Sunday,
+    the prior weekday's close before today's session has opened.
+    """
+    day = now_et.date()
+    while True:
+        close = datetime.combine(day, MARKET_CLOSE, tzinfo=EASTERN)
+        if close <= now_et and day.weekday() < 5:
+            return close
+        day -= timedelta(days=1)
+
+
+def get_quotes(db: Session, tickers: list[str], now: datetime | None = None) -> dict[str, PriceQuote]:
+    """Cached quotes for `tickers`, refreshed first if stale.
+
+    `now` is exposed for tests; callers always take the default (real UTC now).
+    """
     if not tickers:
         return {}
 
     wanted = sorted({t.upper() for t in tickers})
     cached = {q.ticker: q for q in db.scalars(select(PriceQuote).where(PriceQuote.ticker.in_(wanted)))}
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
 
-    stale = [t for t in wanted if _is_stale(cached.get(t), now)]
-    never_fetched = [t for t in wanted if t not in cached]
+    if _near_market_hours(now):
+        # Market's open: the usual short TTL applies.
+        stale = [t for t in wanted if _is_stale(cached.get(t), now)]
+    else:
+        # Market's closed: the cache is only good until the next close, so a
+        # quote from before the last close is stale no matter how "fresh" its
+        # TTL looks — this is what makes the first read after today's close
+        # always fetch the final price instead of waiting for the next
+        # market-hours window.
+        boundary = _last_close_at_or_before(now.astimezone(EASTERN))
+        stale = [t for t in wanted if (q := cached.get(t)) is None or q.as_of < boundary]
 
-    # Outside market hours the cache is good enough, unless we have never seen
-    # the ticker at all and have nothing to show.
-    if stale and (_near_market_hours(now) or never_fetched):
+    if stale:
         refreshed = _refresh(db, stale)
         cached.update(refreshed)
 

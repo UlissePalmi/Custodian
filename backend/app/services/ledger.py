@@ -23,6 +23,7 @@ from app.months import (
     month_key_range,
 )
 from app.schemas.ledger import TransactionInput
+from app.services import networth
 
 
 # --------------------------------------------------------------------------
@@ -137,6 +138,10 @@ def _validate_input(db: Session, payload: TransactionInput) -> tuple[Decimal, st
 # --------------------------------------------------------------------------
 
 
+def _cash_effect(kind: str, amount: Decimal) -> Decimal:
+    return amount if kind == "income" else -amount
+
+
 def create_transaction(
     db: Session,
     month_key: str,
@@ -159,6 +164,15 @@ def create_transaction(
         import_batch_id=import_batch_id,
     )
     db.add(transaction)
+
+    # A Chase import applies its own batch-level cash delta and snapshot
+    # (see services/importer.py); a manual entry is the only write that has
+    # to do it for itself, one transaction at a time.
+    if source == "manual":
+        account = networth.get_cash_account(db)
+        account.balance = round_cents(account.balance + _cash_effect(category.kind, amount))
+        networth.upsert_snapshot(db, month_key)
+
     if commit:
         db.commit()
         db.refresh(transaction)
@@ -172,11 +186,24 @@ def update_transaction(db: Session, transaction_id: int, payload: TransactionInp
     if transaction is None:
         raise ApiError("Transaction not found.", 404)
 
+    old_month_key = month_key_from_date(transaction.date)
+    old_effect = _cash_effect(transaction.category.kind, transaction.amount)
+
     amount, description, category = _validate_input(db, payload)
     transaction.date = payload.date
     transaction.amount = amount
     transaction.description = description
     transaction.category_id = category.id
+
+    if transaction.source == "manual":
+        new_month_key = month_key_from_date(payload.date)
+        new_effect = _cash_effect(category.kind, amount)
+        account = networth.get_cash_account(db)
+        account.balance = round_cents(account.balance - old_effect + new_effect)
+        networth.upsert_snapshot(db, old_month_key)
+        if new_month_key != old_month_key:
+            networth.upsert_snapshot(db, new_month_key)
+
     db.commit()
     db.refresh(transaction)
     return transaction
@@ -186,7 +213,19 @@ def delete_transaction(db: Session, transaction_id: int) -> None:
     transaction = db.get(Transaction, transaction_id)
     if transaction is None:
         raise ApiError("Transaction not found.", 404)
+
+    is_manual = transaction.source == "manual"
+    if is_manual:
+        month_key = month_key_from_date(transaction.date)
+        effect = _cash_effect(transaction.category.kind, transaction.amount)
+        account = networth.get_cash_account(db)
+        account.balance = round_cents(account.balance - effect)
+
     db.delete(transaction)
+    db.flush()
+
+    if is_manual:
+        networth.upsert_snapshot(db, month_key)
     db.commit()
 
 

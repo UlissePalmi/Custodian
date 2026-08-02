@@ -41,6 +41,10 @@ export default function ImportConfirmModal({
   )
 
   const flaggedCount = included.filter((row) => row.flaggedForReview).length
+  const alreadyImportedCount = rows.filter((row) => row.alreadyImported).length
+
+  const monthKeys = new Set(rows.map((row) => row.date.slice(0, 7)))
+  const spansMultipleMonths = monthKeys.size > 1
 
   function updateRow(id: string, patch: Partial<(typeof rows)[number]>) {
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
@@ -64,7 +68,11 @@ export default function ImportConfirmModal({
       open
       onClose={onClose}
       size="lg"
-      title={`Are these all your transactions for ${monthLabel}?`}
+      title={
+        spansMultipleMonths
+          ? `Review ${rows.length} transactions from ${preview.fileName}`
+          : `Are these all your transactions for ${monthLabel}?`
+      }
       description={`Parsed ${preview.transactions.length} rows from ${preview.fileName}. Adjust categories or uncheck anything that shouldn't be imported.`}
       footer={
         <>
@@ -78,6 +86,16 @@ export default function ImportConfirmModal({
         </>
       }
     >
+      {alreadyImportedCount > 0 && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+          <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            {alreadyImportedCount} {alreadyImportedCount === 1 ? 'transaction looks' : 'transactions look'}{' '}
+            like they're already in the ledger and were left unchecked.
+          </p>
+        </div>
+      )}
+
       {flaggedCount > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -117,6 +135,7 @@ export default function ImportConfirmModal({
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                       {formatDayShort(row.date)} · Chase: {row.chaseCategory || '—'}
+                      {row.alreadyImported && ' · Already in the ledger'}
                     </p>
                   </div>
                   <Amount
@@ -160,8 +179,9 @@ export default function ImportConfirmModal({
           <Amount value={cashDelta} signed className="font-semibold" />
         </div>
         <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-          Confirming writes these entries to {monthLabel} and applies this delta to your cash
-          balance, updating net worth.
+          {spansMultipleMonths
+            ? "Confirming writes these entries to their respective months and applies this delta to your cash balance, updating net worth."
+            : `Confirming writes these entries to ${monthLabel} and applies this delta to your cash balance, updating net worth.`}
         </p>
       </div>
 

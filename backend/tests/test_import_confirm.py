@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Account, Transaction
+from app.models import Account, NetWorthSnapshot, Transaction
 
 # Income 3200.00 + 22.50 refund, expenses 523.92 -> net cash movement.
 EXPECTED_CASH_DELTA = Decimal("2698.58")
@@ -66,7 +66,7 @@ def test_preview_maps_categories_and_flags_the_rest(
 def test_unsupported_file_type_is_415(client: TestClient) -> None:
     response = client.post("/api/import/chase", files={"file": ("notes.txt", b"hello", "text/plain")})
     assert response.status_code == 415
-    assert response.json()["detail"] == "Please upload a Chase export as .csv, .xls or .xlsx."
+    assert response.json()["detail"] == "Please upload a Chase export as .csv, .xls, .xlsx or .pdf."
 
 
 def test_empty_file_is_422(client: TestClient) -> None:
@@ -172,6 +172,60 @@ def test_batch_can_be_reimported_after_undo(
 
 def test_deleting_an_unknown_batch_is_404(client: TestClient) -> None:
     assert client.delete("/api/import/batches/batch-nope").status_code == 404
+
+
+def test_spending_report_pdf_confirms(
+    client: TestClient, spending_report_pdf: bytes, cash_account: Account, db: Session
+) -> None:
+    """The fixture spans July (Groceries) and August (Bills & Utilities) —
+    both months' transactions should be proposed, none of them pre-existing,
+    and confirming should snapshot net worth for both months touched."""
+    preview = upload(client, spending_report_pdf, "chase_spending_report_2026.pdf")
+    assert {t["date"][:7] for t in preview["transactions"]} == {"2026-07", "2026-08"}
+    assert len(preview["transactions"]) == 4
+    assert all(t["alreadyImported"] is False and t["include"] is True for t in preview["transactions"])
+
+    result = client.post("/api/import/chase/confirm", json=preview).json()
+    # -54.32 WHOLE FOODS -32.10 TRADER JOES -120.00 CON EDISON +15.00 REFUND ADJUSTMENT
+    assert result["cashDelta"] == -191.42
+    assert cash_balance(db) == STARTING_CASH - Decimal("191.42")
+
+    snapshotted_months = {row.month_key for row in db.scalars(select(NetWorthSnapshot))}
+    assert snapshotted_months == {"2026-07", "2026-08"}
+
+
+def test_spending_report_pdf_skips_transactions_already_in_the_ledger(
+    client: TestClient, spending_report_pdf: bytes, cash_account: Account, db: Session
+) -> None:
+    """The Spending Report is a running year-to-date summary, so a re-upload
+    always contains every prior month too. A transaction already in the
+    ledger — however it got there — must come back proposed but unchecked
+    rather than risk double-counting, while genuinely new ones stay checked."""
+    client.post(
+        "/api/months/2026-07/transactions",
+        json={
+            "date": "2026-07-05",
+            "amount": 54.32,
+            "description": "WHOLE FOODS MARKET",
+            "categoryId": "cat-groceries",
+        },
+    )
+
+    preview = upload(client, spending_report_pdf, "chase_spending_report_2026.pdf")
+    rows = {t["description"]: t for t in preview["transactions"]}
+
+    already_there = rows["WHOLE FOODS MARKET"]
+    assert already_there["alreadyImported"] is True
+    assert already_there["include"] is False
+
+    for description in ("TRADER JOES", "CON EDISON", "REFUND ADJUSTMENT"):
+        assert rows[description]["alreadyImported"] is False
+        assert rows[description]["include"] is True
+
+    result = client.post("/api/import/chase/confirm", json=preview).json()
+    assert result["importedCount"] == 3
+    # -32.10 TRADER JOES -120.00 CON EDISON +15.00 REFUND ADJUSTMENT (WHOLE FOODS skipped)
+    assert result["cashDelta"] == -137.10
 
 
 def test_checking_export_confirms(

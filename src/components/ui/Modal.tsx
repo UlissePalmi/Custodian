@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 interface ModalProps {
@@ -15,6 +16,12 @@ interface ModalProps {
 /**
  * Centred dialog on desktop, bottom sheet on mobile.
  * Closes on Escape and backdrop click; locks body scroll while open.
+ *
+ * Portaled to `document.body` rather than rendered in place: a page with its
+ * own `position: sticky` + `z-index` elements (e.g. the yearly table's pinned
+ * columns) can otherwise composite above this modal despite its higher
+ * z-index, since sticky layers inside a scrolling ancestor aren't guaranteed
+ * to stack correctly against a later, unrelated element's z-index.
  */
 export function Modal({
   open,
@@ -49,7 +56,7 @@ export function Modal({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
       role="dialog"
@@ -95,6 +102,7 @@ export function Modal({
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

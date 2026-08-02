@@ -185,6 +185,8 @@ export interface ProposedTransaction {
   kind: CategoryKind
   /** True when the Chase category had no mapping and fell through to "Other". */
   flaggedForReview: boolean
+  /** True when this transaction is already in the ledger from an earlier import or manual entry. */
+  alreadyImported: boolean
   /** Unchecked rows are skipped on confirm. */
   include: boolean
 }

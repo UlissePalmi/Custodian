@@ -12,13 +12,14 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.errors import ApiError
 from app.models import Account, Holding, NetWorthSnapshot, PriceQuote
 from app.money import ZERO, percent_of, round_cents
 from app.months import compare_month_keys, current_snapshot_month
 from app.services.quotes import get_quotes
 
 #: Asset classes the dashboard always shows, even at zero.
-BASE_ASSET_CLASSES = ("stocks", "cash", "bonds")
+BASE_ASSET_CLASSES = ("stocks", "bonds", "cash")
 
 ASSET_CLASS_LABELS = {"stocks": "Stocks", "cash": "Cash", "bonds": "Bonds"}
 
@@ -75,27 +76,64 @@ def read_holdings(db: Session) -> list[dict]:
     return result
 
 
-def stocks_value(db: Session) -> Decimal:
+def holdings_value_by_type(db: Session) -> dict[str, Decimal]:
+    """Market value of all holdings, grouped by their account's asset class.
+
+    A holding's own account decides its bucket — a stock ETF and a Treasury
+    held by ISIN both live in `holdings`, priced the same way, but they
+    belong to different asset classes on the dashboard.
+    """
     holdings = list(db.scalars(select(Holding)))
     if not holdings:
-        return ZERO
+        return {}
     quotes = get_quotes(db, [h.ticker for h in holdings])
-    total = ZERO
+    totals: dict[str, Decimal] = {}
     for holding in holdings:
         price, _ = _price_for(holding, quotes)
-        total += holding.quantity * price
-    return round_cents(total)
+        asset_class = holding.account.type
+        totals[asset_class] = totals.get(asset_class, ZERO) + holding.quantity * price
+    return {asset_class: round_cents(value) for asset_class, value in totals.items()}
+
+
+def _fx_ticker(currency: str) -> str:
+    return f"{currency.upper()}USD=X"
+
+
+def get_cash_account(db: Session) -> Account:
+    """The account any cash-moving write (an import, a manual transaction)
+    applies its delta to. Single-user app, so the first cash-type account is
+    the only one that matters."""
+    account = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
+    if account is None:
+        raise ApiError("No cash account is configured — run the seed script.", 422)
+    return account
 
 
 def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
-    """Account balances grouped by account type, plus the live stocks value."""
+    """Account balances grouped by account type, plus holdings valued at market.
+
+    Non-USD balances are converted through the same cached quote feed used for
+    holdings — an account's `currency` just becomes another "ticker" (e.g.
+    'EURUSD=X'), so this picks up the delayed-refresh/offline-fallback behavior
+    quotes already have for free.
+    """
+    accounts = list(db.scalars(select(Account)))
+    fx_tickers = [_fx_ticker(a.currency) for a in accounts if a.currency != "usd"]
+    fx_rates = get_quotes(db, fx_tickers) if fx_tickers else {}
+
     totals: dict[str, Decimal] = {asset_class: ZERO for asset_class in BASE_ASSET_CLASSES}
-    for account in db.scalars(select(Account)):
+    for account in accounts:
         if account.type == "stocks":
-            # Stocks are valued from their holdings, never from a balance.
+            # Stocks-type accounts carry no balance of their own — see
+            # models/account.py — their value comes entirely from holdings, below.
             continue
-        totals[account.type] = round_cents(totals.get(account.type, ZERO) + account.balance)
-    totals["stocks"] = stocks_value(db)
+        balance = account.balance
+        if account.currency != "usd":
+            rate = fx_rates.get(_fx_ticker(account.currency))
+            balance = round_cents(balance * rate.price) if rate is not None else ZERO
+        totals[account.type] = round_cents(totals.get(account.type, ZERO) + balance)
+    for asset_class, value in holdings_value_by_type(db).items():
+        totals[asset_class] = round_cents(totals.get(asset_class, ZERO) + value)
     return totals
 
 

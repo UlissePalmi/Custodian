@@ -23,6 +23,11 @@ interface AllocationCardProps {
   total: number
 }
 
+// Fixed hue-to-asset-class mapping, independent of display order — color
+// follows the entity, never its position in the array, so re-sorting the
+// allocation (or a slice dropping out at zero) never repaints the others.
+const ASSET_CLASS_COLOR_ORDER = ['stocks', 'bonds', 'cash']
+
 /**
  * Donut plus a legend table. The table is not decoration: it carries the values
  * for slices whose hue sits below the 3:1 contrast bar in light mode, which is
@@ -44,7 +49,11 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
     )
   }
 
-  const colorFor = (index: number) => theme.series[index % theme.series.length]
+  const colorFor = (assetClass: string) => {
+    const fixedIndex = ASSET_CLASS_COLOR_ORDER.indexOf(assetClass)
+    const index = fixedIndex >= 0 ? fixedIndex : ASSET_CLASS_COLOR_ORDER.length
+    return theme.series[index % theme.series.length]
+  }
 
   return (
     <Card className="flex flex-col">
@@ -64,15 +73,14 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
                 strokeWidth={2}
                 isAnimationActive={false}
               >
-                {slices.map((slice, index) => (
-                  <Cell key={slice.assetClass} fill={colorFor(index)} />
+                {slices.map((slice) => (
+                  <Cell key={slice.assetClass} fill={colorFor(slice.assetClass)} />
                 ))}
               </Pie>
               <Tooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null
                   const slice = payload[0].payload as AllocationSlice
-                  const index = slices.findIndex((s) => s.assetClass === slice.assetClass)
                   return (
                     <ChartTooltip
                       theme={theme}
@@ -82,7 +90,7 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
                           key: 'value',
                           label: formatPercent(slice.percent),
                           value: formatUSD(slice.value),
-                          color: colorFor(index),
+                          color: colorFor(slice.assetClass),
                         },
                       ]}
                     />
@@ -110,13 +118,13 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {slices.map((slice, index) => (
+            {slices.map((slice) => (
               <tr key={slice.assetClass}>
                 <th scope="row" className="py-2 text-left font-normal">
                   <span className="flex items-center gap-2">
                     <span
                       className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: colorFor(index) }}
+                      style={{ backgroundColor: colorFor(slice.assetClass) }}
                       aria-hidden
                     />
                     <span className="text-slate-700 dark:text-slate-300">{slice.label}</span>

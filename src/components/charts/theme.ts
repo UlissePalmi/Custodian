@@ -26,7 +26,7 @@ export interface ChartTheme {
 }
 
 const LIGHT: ChartTheme = {
-  series: ['#2a78d6', '#eb6834', '#1baf7a'],
+  series: ['#2a78d6', '#e08fc8', '#1baf7a'],
   surface: '#ffffff',
   grid: '#e2e8f0',
   axis: '#64748b',
@@ -36,7 +36,7 @@ const LIGHT: ChartTheme = {
 }
 
 const DARK: ChartTheme = {
-  series: ['#3987e5', '#d95926', '#199e70'],
+  series: ['#3987e5', '#c860a8', '#199e70'],
   surface: '#0f172a',
   grid: '#1e293b',
   axis: '#94a3b8',

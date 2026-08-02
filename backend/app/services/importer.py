@@ -9,12 +9,13 @@ double-counting.
 
 import re
 import secrets
+from collections import Counter
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
-from app.models import Account, Category, ChaseCategoryMap, ImportBatch, Transaction
+from app.models import Category, ChaseCategoryMap, ImportBatch, Transaction
 from app.money import ZERO, round_cents
 from app.months import (
     LEDGER_START,
@@ -30,7 +31,7 @@ from app.services import networth
 from app.services.chase_parser import ParsedRow, dominant_month, parse_chase_file
 from app.services.ledger import create_transaction
 
-ACCEPTED_EXTENSIONS = (".csv", ".xls", ".xlsx")
+ACCEPTED_EXTENSIONS = (".csv", ".xls", ".xlsx", ".pdf")
 
 FALLBACK_EXPENSE_CATEGORY_ID = "cat-other"
 FALLBACK_INCOME_CATEGORY_ID = "cat-main-income"
@@ -92,17 +93,43 @@ def _propose_category(
     return fallback, True
 
 
+def _natural_key(txn_date, description: str, amount, kind: str) -> tuple:
+    return (txn_date, description.strip().lower(), amount, kind)
+
+
+def _existing_transaction_counts(db: Session, rows: list[ParsedRow]) -> Counter:
+    """Counts of (date, description, amount, kind) already in the ledger.
+
+    A parsed row matching one of these keys is the same real-world
+    transaction, however it originally got there — a manual entry blocks a
+    duplicate import just as much as an earlier Chase import would. Counted
+    rather than a plain set, so two genuinely repeated transactions (e.g. two
+    identical coffees on the same day) aren't both treated as duplicates when
+    only one of them is actually already in the ledger.
+    """
+    if not rows:
+        return Counter()
+    dates = [row.date for row in rows]
+    existing = db.execute(
+        select(Transaction.date, Transaction.description, Transaction.amount, Category.kind)
+        .join(Category, Category.id == Transaction.category_id)
+        .where(Transaction.date >= min(dates), Transaction.date <= max(dates))
+    ).all()
+    return Counter(_natural_key(*row) for row in existing)
+
+
 def build_preview(
     db: Session, content: bytes, filename: str, hint_month_key: str | None = None
 ) -> dict:
     if not filename.lower().endswith(ACCEPTED_EXTENSIONS):
-        raise ApiError("Please upload a Chase export as .csv, .xls or .xlsx.", 415)
+        raise ApiError("Please upload a Chase export as .csv, .xls, .xlsx or .pdf.", 415)
     if not content:
         raise ApiError("That file is empty.", 422)
 
     rows = parse_chase_file(content, filename)
     detected_month_key = _detect_month(rows, filename, hint_month_key)
     mapping, kinds = _category_lookup(db)
+    remaining_existing = _existing_transaction_counts(db, rows)
 
     transactions = []
     for index, row in enumerate(rows, start=1):
@@ -110,6 +137,12 @@ def build_preview(
         # Nothing before the ledger opens can ever be stored, so such rows come
         # back unticked rather than failing at confirm time.
         too_old = compare_month_keys(month_key_from_date(row.date), LEDGER_START) < 0
+
+        key = _natural_key(row.date, row.description, row.amount, row.kind)
+        already_imported = remaining_existing[key] > 0
+        if already_imported:
+            remaining_existing[key] -= 1
+
         transactions.append(
             {
                 "id": f"preview-{index}",
@@ -120,7 +153,8 @@ def build_preview(
                 "category_id": category_id,
                 "kind": row.kind,
                 "flagged_for_review": flagged or too_old,
-                "include": not too_old,
+                "already_imported": already_imported,
+                "include": not too_old and not already_imported,
             }
         )
 
@@ -137,22 +171,21 @@ def build_preview(
 # --------------------------------------------------------------------------
 
 
-def _cash_account(db: Session) -> Account:
-    account = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
-    if account is None:
-        raise ApiError("No cash account is configured — run the seed script.", 422)
-    return account
-
-
 def confirm_import(db: Session, preview: ImportPreview) -> dict:
     if db.get(ImportBatch, preview.batch_id) is not None:
         raise ApiError("This import has already been confirmed.", 409)
-    if not is_within_ledger_range(preview.detected_month_key):
-        raise ApiError(f"{preview.detected_month_key} is outside the ledger range.", 422)
 
     included = [t for t in preview.transactions if t.include]
     if not included:
         raise ApiError("No transactions selected to import.", 422)
+
+    # A batch's rows can straddle a month boundary (a PDF backfill spans
+    # several), so every month present needs its own range check and its own
+    # net worth snapshot below — not just the batch's one "primary" month.
+    month_keys = sorted({month_key_from_date(row.date) for row in included})
+    for month_key in month_keys:
+        if not is_within_ledger_range(month_key):
+            raise ApiError(f"{month_key} is outside the ledger range.", 422)
 
     kinds = {c.id: c.kind for c in db.scalars(select(Category))}
 
@@ -191,10 +224,11 @@ def confirm_import(db: Session, preview: ImportPreview) -> dict:
     cash_delta = round_cents(cash_delta)
     batch.cash_delta = cash_delta
 
-    account = _cash_account(db)
+    account = networth.get_cash_account(db)
     account.balance = round_cents(account.balance + cash_delta)
 
-    total = networth.upsert_snapshot(db, preview.detected_month_key)
+    for month_key in month_keys:
+        total = networth.upsert_snapshot(db, month_key)
     db.commit()
 
     return {
@@ -212,18 +246,28 @@ def delete_batch(db: Session, batch_id: str) -> None:
     if batch is None:
         raise ApiError("Import batch not found.", 404)
 
+    # A batch's transactions can span more than one month (see confirm_import),
+    # so every month they touched needs its snapshot recomputed below — not
+    # just the batch's one "primary" month_key.
+    month_keys = {
+        month_key_from_date(d)
+        for d in db.scalars(
+            select(Transaction.date).where(Transaction.import_batch_id == batch_id)
+        )
+    }
+
     # Bulk delete, flushed before the batch row goes: the ORM has no
     # relationship between the two tables and would otherwise be free to drop
     # the batch first and let the database's cascade do this implicitly.
     db.execute(delete(Transaction).where(Transaction.import_batch_id == batch_id))
     db.flush()
 
-    account = _cash_account(db)
+    account = networth.get_cash_account(db)
     account.balance = round_cents(account.balance - batch.cash_delta)
 
-    month_key = batch.month_key
     db.delete(batch)
     db.flush()
 
-    networth.upsert_snapshot(db, month_key)
+    for month_key in month_keys:
+        networth.upsert_snapshot(db, month_key)
     db.commit()

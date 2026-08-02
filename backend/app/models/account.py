@@ -26,3 +26,7 @@ class Account(Base):
     # migration, and the dashboard renders whatever asset classes it receives.
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    # ISO 4217, lowercase. `balance` is in this currency; non-'usd' accounts are
+    # converted to USD at read time (see services/networth.py) via the same
+    # cached quote feed used for holdings, keyed by e.g. 'EURUSD=X'.
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="usd")

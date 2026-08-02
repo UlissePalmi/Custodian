@@ -117,3 +117,40 @@ def test_amount_formats_are_tolerated() -> None:
 def test_dominant_month_picks_the_statement_month(checking_csv: bytes) -> None:
     rows = parse_chase_file(checking_csv, "chase_checking_2026-09.csv")
     assert dominant_month(rows) == "2026-09"
+
+
+def test_spending_report_pdf_returns_every_month(spending_report_pdf: bytes) -> None:
+    """The fixture has a July Groceries table and an August Bills &
+    Utilities table. The report is a running YTD summary, but it's the
+    importer's job (not the parser's) to decide what's already been
+    imported — the parser hands back everything it finds."""
+    rows = parse_chase_file(spending_report_pdf, "chase_spending_report_2026.pdf")
+    assert {r.date.strftime("%Y-%m") for r in rows} == {"2026-07", "2026-08"}
+    assert {r.description for r in rows} == {
+        "WHOLE FOODS MARKET",
+        "TRADER JOES",
+        "CON EDISON",
+        "REFUND ADJUSTMENT",
+    }
+
+
+def test_spending_report_pdf_humanizes_category(spending_report_pdf: bytes) -> None:
+    rows = {r.description: r for r in parse_chase_file(spending_report_pdf, "chase_spending_report_2026.pdf")}
+    assert rows["WHOLE FOODS MARKET"].chase_category == "Groceries"
+    assert rows["CON EDISON"].chase_category == "Bills & Utilities"
+
+
+def test_spending_report_pdf_sign_convention_is_inverted(spending_report_pdf: bytes) -> None:
+    """Unlike the CSV credit-card export, a positive amount here is money
+    spent and a negative amount is a refund."""
+    rows = {r.description: r for r in parse_chase_file(spending_report_pdf, "chase_spending_report_2026.pdf")}
+    assert rows["CON EDISON"].amount == Decimal("120.00")
+    assert rows["CON EDISON"].kind == "expense"
+    assert rows["REFUND ADJUSTMENT"].amount == Decimal("15.00")
+    assert rows["REFUND ADJUSTMENT"].kind == "income"
+
+
+def test_spending_report_pdf_with_no_transactions_is_rejected() -> None:
+    with pytest.raises(ApiError) as excinfo:
+        parse_chase_file(b"%PDF-1.4 not a real spending report", "empty.pdf")
+    assert excinfo.value.status == 422

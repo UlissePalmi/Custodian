@@ -69,9 +69,18 @@ class AccountOut(CamelModel):
     name: str
     type: str
     balance: Money
+    currency: str
 
 
 class AccountInput(CamelModel):
     name: str | None = None
     type: str | None = None
     balance: float | None = None
+    currency: str | None = None
+
+
+class AccountCreate(CamelModel):
+    name: str
+    type: str
+    balance: float = 0
+    currency: str = "usd"

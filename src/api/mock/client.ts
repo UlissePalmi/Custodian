@@ -49,7 +49,7 @@ function delay(min = 250, max = 500): Promise<void> {
 // Chase import mock
 // ---------------------------------------------------------------------------
 
-const ACCEPTED_EXTENSIONS = ['.csv', '.xls', '.xlsx']
+const ACCEPTED_EXTENSIONS = ['.csv', '.xls', '.xlsx', '.pdf']
 
 /**
  * Rows a Chase export might contain. The real parser reads these off the
@@ -161,7 +161,7 @@ export const mockApi: CustodianApi = {
 
     const lowerName = file.name.toLowerCase()
     if (!ACCEPTED_EXTENSIONS.some((ext) => lowerName.endsWith(ext))) {
-      throw new ApiError('Please upload a Chase export as .csv, .xls or .xlsx.', 415)
+      throw new ApiError('Please upload a Chase export as .csv, .xls, .xlsx or .pdf.', 415)
     }
     if (file.size === 0) {
       throw new ApiError('That file is empty.', 422)
@@ -182,6 +182,7 @@ export const mockApi: CustodianApi = {
         categoryId,
         kind: row.kind,
         flaggedForReview,
+        alreadyImported: false,
         include: true,
       }
     })
