@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Custodian is a personal wealth-management app: a monthly income/expense ledger, a derived yearly table, net worth tracking (cash/stocks/bonds), and a Chase bank-export importer that rolls confirmed imports into net worth. Single user, running on a Raspberry Pi and reached over LAN/Tailscale.
 
-It runs as two systemd services: `custodian-frontend` (Vite, port 5173) serves the app, and `custodian` (FastAPI, port 8000) serves the JSON API. The browser calls the API cross-origin, so two settings must agree — `VITE_API_BASE_URL` in the repo root `.env` and `CORS_ORIGIN_REGEX` in `backend/.env`. `backend/deploy/DEPLOY.md` covers Pi setup, both units and day-to-day admin commands.
+It runs as two systemd services: `custodian-frontend` (Vite, port 5173) serves the app, and `custodian` (FastAPI, port 8000) serves the JSON API. The browser calls the API cross-origin, so two settings must agree — `VITE_API_BASE_URL` in `frontend/.env` and `CORS_ORIGIN_REGEX` in `backend/.env`. `backend/deploy/DEPLOY.md` covers Pi setup, both units and day-to-day admin commands.
 
 ## Commands
 
-Front end (repo root):
+Front end (`frontend/`):
 - `npm run dev` — Vite on :5173, bound to all interfaces
 - `npm run typecheck` — `tsc -b --noEmit`
 - `npm run build` — static bundle to `dist/`; not part of running the app, since Vite serves it

@@ -7,8 +7,8 @@ Wants=network-online.target
 Type=simple
 User=ulisse
 Group=ulisse
-WorkingDirectory=/home/ulisse/Documents/Custodian
-# Vite reads the repo's .env at startup, so VITE_API_BASE_URL takes effect on
+WorkingDirectory=/home/ulisse/Documents/Custodian/frontend
+# Vite reads frontend/.env at startup, so VITE_API_BASE_URL takes effect on
 # restart — no rebuild. Host binding comes from vite.config.ts.
 ExecStart=/usr/bin/npm run dev
 Restart=on-failure

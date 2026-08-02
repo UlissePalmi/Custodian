@@ -11,7 +11,7 @@ Open the app at **`http://<pi-address>:5173`**. The browser loads the page from
 5173 and then calls the API on 8000 directly, which is a cross-origin request —
 hence the two settings that have to agree:
 
-* `VITE_API_BASE_URL` in the repo root `.env` tells the front end where the API is.
+* `VITE_API_BASE_URL` in `frontend/.env` tells the front end where the API is.
 * `CORS_ORIGIN_REGEX` in `backend/.env` tells the API which origins may call it.
 
 ## 1. PostgreSQL
@@ -43,7 +43,7 @@ starting empty. Only useful for comparing the API against the mock.
 ## 3. Front end
 
 ```bash
-cd ~/Documents/Custodian
+cd ~/Documents/Custodian/frontend
 npm install
 cp .env.example .env    # set VITE_API_BASE_URL to this Pi's address
 ```
@@ -65,10 +65,10 @@ Logs: `journalctl -u custodian -f` (or `-u custodian-frontend`).
 
 ## If the Pi's address changes
 
-The front end's API URL is fixed in the root `.env`, so it needs updating:
+The front end's API URL is fixed in `frontend/.env`, so it needs updating:
 
 ```bash
-nano ~/Documents/Custodian/.env          # VITE_API_BASE_URL=http://<new-address>:8000/api
+nano ~/Documents/Custodian/frontend/.env          # VITE_API_BASE_URL=http://<new-address>:8000/api
 sudo systemctl restart custodian-frontend
 ```
 
@@ -106,7 +106,7 @@ usually there is nothing to start. To run them by hand instead:
 ```bash
 sudo systemctl stop custodian custodian-frontend
 cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
-npm run dev     # in the repo root
+cd frontend && npm run dev
 ```
 
 `VITE_USE_MOCK=true npm run dev` runs the front end against the in-memory mock
