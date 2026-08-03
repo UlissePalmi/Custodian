@@ -4,6 +4,8 @@ import DashboardPage from './pages/DashboardPage'
 import MonthsPage from './pages/MonthsPage'
 import MonthDetailPage from './pages/MonthDetailPage'
 import YearlyTablePage from './pages/YearlyTablePage'
+import StocksPage from './pages/StocksPage'
+import StockModelPage from './pages/StockModelPage'
 
 export default function App() {
   return (
@@ -13,6 +15,8 @@ export default function App() {
         <Route path="/months" element={<MonthsPage />} />
         <Route path="/months/:monthKey" element={<MonthDetailPage />} />
         <Route path="/yearly" element={<YearlyTablePage />} />
+        <Route path="/stocks" element={<StocksPage />} />
+        <Route path="/stocks/:id" element={<StockModelPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

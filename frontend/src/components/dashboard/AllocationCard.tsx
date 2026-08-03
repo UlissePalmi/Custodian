@@ -105,7 +105,7 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
         <table className="mt-5 w-full text-sm">
           <caption className="sr-only">Net worth by asset class</caption>
           <thead>
-            <tr className="text-xs text-slate-500 dark:text-slate-400">
+            <tr className="text-xs text-slate-500">
               <th scope="col" className="pb-2 text-left font-medium">
                 Asset class
               </th>
@@ -117,7 +117,7 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="divide-y divide-terminal-navy/10">
             {slices.map((slice) => (
               <tr key={slice.assetClass}>
                 <th scope="row" className="py-2 text-left font-normal">
@@ -127,15 +127,11 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
                       style={{ backgroundColor: colorFor(slice.assetClass) }}
                       aria-hidden
                     />
-                    <span className="text-slate-700 dark:text-slate-300">{slice.label}</span>
+                    <span className="text-slate-700">{slice.label}</span>
                   </span>
                 </th>
-                <td className="tnum py-2 text-right text-slate-900 dark:text-slate-100">
-                  {formatUSD(slice.value)}
-                </td>
-                <td className="tnum py-2 text-right text-slate-500 dark:text-slate-400">
-                  {formatPercent(slice.percent)}
-                </td>
+                <td className="tnum py-2 text-right text-terminal-navy">{formatUSD(slice.value)}</td>
+                <td className="tnum py-2 text-right text-slate-500">{formatPercent(slice.percent)}</td>
               </tr>
             ))}
           </tbody>

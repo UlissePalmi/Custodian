@@ -18,6 +18,9 @@ import {
   type MonthLedger,
   type NetWorthPoint,
   type NetWorthSummary,
+  type StockModel,
+  type StockModelInput,
+  type StockPeriod,
   type Transaction,
   type TransactionInput,
   type YearlyTable,
@@ -30,6 +33,7 @@ import {
   SEED_CATEGORIES,
   SEED_HOLDINGS,
   SEED_NET_WORTH_HISTORY,
+  SEED_STOCK_MODELS,
   SEED_TRANSACTIONS,
 } from './seed'
 import { roundCents } from '../../utils/money'
@@ -58,9 +62,13 @@ interface StoreState {
   /** Batch ids already applied, so re-confirming cannot double-count. */
   appliedImportBatches: string[]
   nextTransactionSeq: number
+  stockModels: StockModel[]
+  nextStockModelSeq: number
 }
 
-const STORAGE_KEY = 'custodian.mock.v1'
+// Bumped to v2 when stock models were added — the v1 shape has no `stockModels`
+// field, and per the fallback below, an old snapshot just resets to seed data.
+const STORAGE_KEY = 'custodian.mock.v2'
 
 function initialState(): StoreState {
   return {
@@ -72,6 +80,8 @@ function initialState(): StoreState {
     pastNetWorthHistory: SEED_NET_WORTH_HISTORY.map((p) => ({ ...p })),
     appliedImportBatches: [],
     nextTransactionSeq: SEED_TRANSACTIONS.length + 1,
+    stockModels: SEED_STOCK_MODELS.map((s) => ({ ...s, periods: s.periods.map((p) => ({ ...p })) })),
+    nextStockModelSeq: SEED_STOCK_MODELS.length + 1,
   }
 }
 
@@ -82,7 +92,11 @@ function load(): StoreState {
     if (!raw) return initialState()
     const parsed = JSON.parse(raw) as StoreState
     // Shallow sanity check — a shape change bumps STORAGE_KEY, but guard anyway.
-    if (!Array.isArray(parsed.transactions) || !Array.isArray(parsed.categories)) {
+    if (
+      !Array.isArray(parsed.transactions) ||
+      !Array.isArray(parsed.categories) ||
+      !Array.isArray(parsed.stockModels)
+    ) {
       return initialState()
     }
     return parsed
@@ -395,4 +409,115 @@ export function categoryIdsByKind(kind: Category['kind']): string[] {
   return readCategories()
     .filter((c) => c.kind === kind)
     .map((c) => c.id)
+}
+
+// ---------------------------------------------------------------------------
+// Stock models (3-statement + DCF)
+// ---------------------------------------------------------------------------
+
+/** Same delay as `readHoldings`' quote — a stand-in for the real feed's TTL. */
+function mockQuoteAsOf(): string {
+  return new Date(Date.now() - 15 * 60 * 1000).toISOString()
+}
+
+function hydrateStockModel(model: StockModel): StockModel {
+  return { ...model, quoteAsOf: model.currentPrice != null ? mockQuoteAsOf() : null }
+}
+
+export function readStockModels(): StockModel[] {
+  return state.stockModels.map(hydrateStockModel)
+}
+
+export function readStockModel(id: string): StockModel {
+  const model = state.stockModels.find((s) => s.id === id)
+  if (!model) throw new ApiError('Stock model not found.', 404)
+  return hydrateStockModel(model)
+}
+
+function validateStockModelInput(input: StockModelInput): void {
+  if (!input.ticker.trim()) throw new ApiError('Ticker is required.', 422)
+  if (!input.name.trim()) throw new ApiError('Name is required.', 422)
+  if (input.waccPercent <= input.terminalGrowthPercent) {
+    throw new ApiError('WACC must be greater than the terminal growth rate.', 422)
+  }
+  if (input.taxRatePercent < 0 || input.taxRatePercent > 100) {
+    throw new ApiError('Tax rate must be between 0 and 100.', 422)
+  }
+}
+
+function nextStockModelId(): string {
+  const id = `stock-${String(state.nextStockModelSeq).padStart(4, '0')}`
+  state.nextStockModelSeq += 1
+  return id
+}
+
+export function insertStockModel(input: StockModelInput): StockModel {
+  validateStockModelInput(input)
+  const model: StockModel = {
+    id: nextStockModelId(),
+    ticker: input.ticker.trim().toUpperCase(),
+    name: input.name.trim(),
+    notes: input.notes?.trim() || undefined,
+    exchange: input.exchange?.trim() || undefined,
+    sector: input.sector?.trim() || undefined,
+    waccPercent: input.waccPercent,
+    terminalGrowthPercent: input.terminalGrowthPercent,
+    taxRatePercent: input.taxRatePercent,
+    netDebt: input.netDebt,
+    currentPrice: null,
+    quoteAsOf: null,
+    periods: [],
+  }
+  state.stockModels.push(model)
+  persist()
+  return hydrateStockModel(model)
+}
+
+export function modifyStockModel(id: string, input: StockModelInput): StockModel {
+  validateStockModelInput(input)
+  const existing = state.stockModels.find((s) => s.id === id)
+  if (!existing) throw new ApiError('Stock model not found.', 404)
+
+  existing.ticker = input.ticker.trim().toUpperCase()
+  existing.name = input.name.trim()
+  existing.notes = input.notes?.trim() || undefined
+  existing.exchange = input.exchange?.trim() || undefined
+  existing.sector = input.sector?.trim() || undefined
+  existing.waccPercent = input.waccPercent
+  existing.terminalGrowthPercent = input.terminalGrowthPercent
+  existing.taxRatePercent = input.taxRatePercent
+  existing.netDebt = input.netDebt
+  persist()
+  return hydrateStockModel(existing)
+}
+
+export function removeStockModel(id: string): void {
+  const index = state.stockModels.findIndex((s) => s.id === id)
+  if (index === -1) throw new ApiError('Stock model not found.', 404)
+  state.stockModels.splice(index, 1)
+  persist()
+}
+
+export function upsertStockModelPeriod(stockModelId: string, period: StockPeriod): StockPeriod {
+  if (!Number.isInteger(period.year) || period.year < 1990 || period.year > 2100) {
+    throw new ApiError('Year must be a valid 4-digit year.', 422)
+  }
+  const model = state.stockModels.find((s) => s.id === stockModelId)
+  if (!model) throw new ApiError('Stock model not found.', 404)
+
+  const index = model.periods.findIndex((p) => p.year === period.year)
+  const stored: StockPeriod = { ...period }
+  if (index === -1) model.periods.push(stored)
+  else model.periods[index] = stored
+  persist()
+  return stored
+}
+
+export function removeStockModelPeriod(stockModelId: string, year: number): void {
+  const model = state.stockModels.find((s) => s.id === stockModelId)
+  if (!model) throw new ApiError('Stock model not found.', 404)
+  const index = model.periods.findIndex((p) => p.year === year)
+  if (index === -1) throw new ApiError('Period not found.', 404)
+  model.periods.splice(index, 1)
+  persist()
 }

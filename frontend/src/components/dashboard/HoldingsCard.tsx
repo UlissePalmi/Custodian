@@ -49,7 +49,7 @@ export default function HoldingsCard({ holdings }: { holdings: Holding[] }) {
         <table className="w-full text-sm">
           <caption className="sr-only">Individual holdings and their returns</caption>
           <thead>
-            <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <tr className="border-b border-terminal-navy/10 text-xs text-slate-500">
               <th scope="col" className="px-5 py-2.5 text-left font-medium">
                 Ticker
               </th>
@@ -73,27 +73,23 @@ export default function HoldingsCard({ holdings }: { holdings: Holding[] }) {
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="divide-y divide-terminal-navy/10">
             {holdings.map((holding) => (
-              <tr key={holding.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <tr key={holding.id} className="hover:bg-terminal-cream/60">
                 <th scope="row" className="px-5 py-3 text-left font-normal">
-                  <span className="block font-semibold text-slate-900 dark:text-slate-100">
-                    {holding.ticker}
-                  </span>
-                  <span className="block max-w-52 truncate text-xs text-slate-500 dark:text-slate-400">
-                    {holding.name}
-                  </span>
+                  <span className="block font-semibold text-terminal-navy">{holding.ticker}</span>
+                  <span className="block max-w-52 truncate text-xs text-slate-500">{holding.name}</span>
                 </th>
-                <td className="tnum px-3 py-3 text-right text-slate-600 dark:text-slate-300">
+                <td className="tnum px-3 py-3 text-right text-slate-600">
                   {formatQuantity(holding.quantity)}
                 </td>
-                <td className="tnum px-3 py-3 text-right text-slate-600 dark:text-slate-300">
+                <td className="tnum px-3 py-3 text-right text-slate-600">
                   {formatUSD(holding.costBasisPerShare)}
                 </td>
-                <td className="tnum px-3 py-3 text-right text-slate-600 dark:text-slate-300">
+                <td className="tnum px-3 py-3 text-right text-slate-600">
                   {formatUSD(holding.currentPrice)}
                 </td>
-                <td className="tnum px-3 py-3 text-right font-medium text-slate-900 dark:text-slate-100">
+                <td className="tnum px-3 py-3 text-right font-medium text-terminal-navy">
                   {formatUSD(holding.marketValue)}
                 </td>
                 <td className="px-3 py-3 text-right">
@@ -114,18 +110,16 @@ export default function HoldingsCard({ holdings }: { holdings: Holding[] }) {
       </div>
 
       {/* Mobile / tablet: one card per holding */}
-      <ul className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
+      <ul className="divide-y divide-terminal-navy/10 lg:hidden">
         {holdings.map((holding) => (
           <li key={holding.id} className="px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-semibold text-slate-900 dark:text-slate-100">{holding.ticker}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{holding.name}</p>
+                <p className="font-semibold text-terminal-navy">{holding.ticker}</p>
+                <p className="truncate text-xs text-slate-500">{holding.name}</p>
               </div>
               <div className="shrink-0 text-right">
-                <p className="tnum font-medium text-slate-900 dark:text-slate-100">
-                  {formatUSD(holding.marketValue)}
-                </p>
+                <p className="tnum font-medium text-terminal-navy">{formatUSD(holding.marketValue)}</p>
                 <p className={`tnum text-xs ${signColor(holding.totalReturn.percent)}`}>
                   {formatPercentSigned(holding.totalReturn.percent)} all time
                 </p>
@@ -134,25 +128,19 @@ export default function HoldingsCard({ holdings }: { holdings: Holding[] }) {
 
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-4">
               <div className="flex justify-between sm:block">
-                <dt className="text-slate-500 dark:text-slate-400">Qty</dt>
-                <dd className="tnum text-slate-700 sm:mt-0.5 dark:text-slate-300">
-                  {formatQuantity(holding.quantity)}
-                </dd>
+                <dt className="text-slate-500">Qty</dt>
+                <dd className="tnum text-slate-700 sm:mt-0.5">{formatQuantity(holding.quantity)}</dd>
               </div>
               <div className="flex justify-between sm:block">
-                <dt className="text-slate-500 dark:text-slate-400">Cost basis</dt>
-                <dd className="tnum text-slate-700 sm:mt-0.5 dark:text-slate-300">
-                  {formatUSD(holding.costBasisPerShare)}
-                </dd>
+                <dt className="text-slate-500">Cost basis</dt>
+                <dd className="tnum text-slate-700 sm:mt-0.5">{formatUSD(holding.costBasisPerShare)}</dd>
               </div>
               <div className="flex justify-between sm:block">
-                <dt className="text-slate-500 dark:text-slate-400">Price</dt>
-                <dd className="tnum text-slate-700 sm:mt-0.5 dark:text-slate-300">
-                  {formatUSD(holding.currentPrice)}
-                </dd>
+                <dt className="text-slate-500">Price</dt>
+                <dd className="tnum text-slate-700 sm:mt-0.5">{formatUSD(holding.currentPrice)}</dd>
               </div>
               <div className="flex justify-between sm:block">
-                <dt className="text-slate-500 dark:text-slate-400">YTD</dt>
+                <dt className="text-slate-500">YTD</dt>
                 <dd className={`tnum sm:mt-0.5 ${signColor(holding.ytdReturnPercent)}`}>
                   {formatPercentSigned(holding.ytdReturnPercent)}
                 </dd>
@@ -160,7 +148,7 @@ export default function HoldingsCard({ holdings }: { holdings: Holding[] }) {
             </dl>
 
             <p className="mt-2 flex justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400">Total return</span>
+              <span className="text-slate-500">Total return</span>
               <Amount value={holding.totalReturn.amount} signed className="font-medium" />
             </p>
           </li>

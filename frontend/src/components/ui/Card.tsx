@@ -7,9 +7,7 @@ interface CardProps {
 
 export function Card({ children, className = '' }: CardProps) {
   return (
-    <section
-      className={`rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}
-    >
+    <section className={`rounded-2xl border border-terminal-navy/10 bg-white shadow-sm ${className}`}>
       {children}
     </section>
   )
@@ -23,12 +21,10 @@ interface CardHeaderProps {
 
 export function CardHeader({ title, subtitle, action }: CardHeaderProps) {
   return (
-    <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <header className="flex items-start justify-between gap-4 border-b border-terminal-navy/10 px-5 py-4">
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase dark:text-slate-100">
-          {title}
-        </h2>
-        {subtitle && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+        <h2 className="text-sm font-semibold tracking-wide text-terminal-navy uppercase">{title}</h2>
+        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </header>

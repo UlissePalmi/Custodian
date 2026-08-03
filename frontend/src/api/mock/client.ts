@@ -18,6 +18,9 @@ import {
   type MonthLedger,
   type NetWorthSummary,
   type ProposedTransaction,
+  type StockModel,
+  type StockModelInput,
+  type StockPeriod,
   type Transaction,
   type TransactionInput,
   type YearlyTable,
@@ -25,15 +28,22 @@ import {
 import {
   applyCashDelta,
   hasAppliedBatch,
+  insertStockModel,
   insertTransaction,
+  modifyStockModel,
   modifyTransaction,
   readCategories,
   readHoldings,
   readMonthLedger,
   readMonths,
   readNetWorth,
+  readStockModel,
+  readStockModels,
   readYearlyTable,
+  removeStockModel,
+  removeStockModelPeriod,
   removeTransaction,
+  upsertStockModelPeriod,
 } from './store'
 import { CHASE_CATEGORY_MAP, CURRENT_SNAPSHOT_MONTH, FALLBACK_EXPENSE_CATEGORY_ID } from './seed'
 import { roundCents } from '../../utils/money'
@@ -244,5 +254,40 @@ export const mockApi: CustodianApi = {
       cashDelta,
       newNetWorthTotal,
     }
+  },
+
+  async getStockModels(): Promise<StockModel[]> {
+    await delay()
+    return readStockModels()
+  },
+
+  async getStockModel(id: string): Promise<StockModel> {
+    await delay()
+    return readStockModel(id)
+  },
+
+  async createStockModel(input: StockModelInput): Promise<StockModel> {
+    await delay(200, 400)
+    return insertStockModel(input)
+  },
+
+  async updateStockModel(id: string, input: StockModelInput): Promise<StockModel> {
+    await delay(200, 400)
+    return modifyStockModel(id, input)
+  },
+
+  async deleteStockModel(id: string): Promise<void> {
+    await delay(200, 400)
+    removeStockModel(id)
+  },
+
+  async upsertStockPeriod(stockModelId: string, period: StockPeriod): Promise<StockPeriod> {
+    await delay(150, 300)
+    return upsertStockModelPeriod(stockModelId, period)
+  },
+
+  async deleteStockPeriod(stockModelId: string, year: number): Promise<void> {
+    await delay(150, 300)
+    removeStockModelPeriod(stockModelId, year)
   },
 }

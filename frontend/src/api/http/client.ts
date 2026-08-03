@@ -18,6 +18,9 @@ import {
   type MonthInfo,
   type MonthLedger,
   type NetWorthSummary,
+  type StockModel,
+  type StockModelInput,
+  type StockPeriod,
   type Transaction,
   type TransactionInput,
   type YearlyTable,
@@ -93,4 +96,22 @@ export const httpApi: CustodianApi = {
 
   confirmImport: (preview: ImportPreview) =>
     jsonRequest<ImportResult>('/import/chase/confirm', 'POST', preview),
+
+  getStockModels: () => request<StockModel[]>('/stocks'),
+
+  getStockModel: (id: string) => request<StockModel>(`/stocks/${encodeURIComponent(id)}`),
+
+  createStockModel: (input: StockModelInput) => jsonRequest<StockModel>('/stocks', 'POST', input),
+
+  updateStockModel: (id: string, input: StockModelInput) =>
+    jsonRequest<StockModel>(`/stocks/${encodeURIComponent(id)}`, 'PUT', input),
+
+  deleteStockModel: (id: string) =>
+    request<void>(`/stocks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  upsertStockPeriod: (stockModelId: string, period: StockPeriod) =>
+    jsonRequest<StockPeriod>(`/stocks/${encodeURIComponent(stockModelId)}/periods`, 'PUT', period),
+
+  deleteStockPeriod: (stockModelId: string, year: number) =>
+    request<void>(`/stocks/${encodeURIComponent(stockModelId)}/periods/${year}`, { method: 'DELETE' }),
 }

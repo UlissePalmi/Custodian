@@ -58,7 +58,7 @@ export default function UploadButton({
           {parsing ? <Spinner className="size-4" /> : <Upload className="size-4" aria-hidden />}
           {parsing ? 'Parsing…' : label}
         </Button>
-        {error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+        {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
       </div>
 
       <input

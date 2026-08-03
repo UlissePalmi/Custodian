@@ -1,4 +1,4 @@
-import { CalendarDays, LayoutDashboard, Table2, type LucideIcon } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, LineChart, Table2, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   to: string
@@ -12,6 +12,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/months', label: 'Months', icon: CalendarDays, matchPrefix: '/months' },
   { to: '/yearly', label: 'Yearly Table', icon: Table2, matchPrefix: '/yearly' },
+  { to: '/stocks', label: 'Stocks', icon: LineChart, matchPrefix: '/stocks' },
 ]
 
 export function isNavItemActive(item: NavItem, pathname: string): boolean {

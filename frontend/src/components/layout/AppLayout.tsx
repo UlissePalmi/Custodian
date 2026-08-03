@@ -7,23 +7,24 @@ function Shell() {
   const { invalidate } = useDataVersion()
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh bg-terminal-cream">
       <Sidebar onImported={invalidate} />
 
       {/* Mobile header — the app name lives here since there is no sidebar.
           Import is deliberately not repeated here: it is a month-scoped action
           and both the Months index and each month page carry their own button. */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm lg:hidden dark:border-slate-800 dark:bg-slate-900/95">
-        <Link to="/" className="text-base font-semibold tracking-tight">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-terminal-navy px-4 py-3 lg:hidden">
+        <Link to="/" className="font-terminal-serif text-base font-bold text-white">
           Custodian
         </Link>
       </header>
 
+      {/* Every page renders its own navy header band flush against this edge,
+          then manages its own padding — there is no shared padded/max-width
+          wrapper, so each page reaches the full width of the content column
+          the way the stock detail page's terminal look always has. */}
       <main className="lg:pl-60">
-        {/* Bottom padding clears the fixed mobile nav. */}
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-28 sm:px-6 lg:px-8 lg:py-8 lg:pb-8">
-          <Outlet />
-        </div>
+        <Outlet />
       </main>
 
       <BottomNav />

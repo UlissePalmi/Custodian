@@ -15,8 +15,10 @@ interface StatProps {
 function Stat({ label, value, signed = false, emphasis = false }: StatProps) {
   return (
     <div>
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
-      <p className={`mt-1 ${emphasis ? 'text-2xl' : 'text-xl'} font-semibold tracking-tight`}>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p
+        className={`mt-1 ${emphasis ? 'text-2xl' : 'text-xl'} font-semibold tracking-tight text-terminal-navy`}
+      >
         <Amount value={value} signed={signed} />
       </p>
     </div>
@@ -43,7 +45,7 @@ export default function MonthSummary({ ledger }: { ledger: MonthLedger }) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-1 sm:gap-5">
           <Stat label="Total income" value={ledger.totalIncome} />
           <Stat label="Total expenses" value={ledger.totalExpenses} />
-          <div className="col-span-2 border-t border-slate-200 pt-4 sm:col-span-1 dark:border-slate-800">
+          <div className="col-span-2 border-t border-terminal-navy/10 pt-4 sm:col-span-1">
             <Stat label="Net" value={ledger.net} signed emphasis />
           </div>
         </div>
@@ -76,7 +78,7 @@ export default function MonthSummary({ ledger }: { ledger: MonthLedger }) {
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-800 dark:text-slate-500">
+          <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-terminal-navy/20 text-sm text-slate-400">
             Add entries to see the comparison
           </div>
         )}

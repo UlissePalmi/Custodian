@@ -75,20 +75,20 @@ export default function TransactionList({
             }
           />
         ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          <ul className="divide-y divide-terminal-navy/10">
             {transactions.map((transaction) => (
               <li key={transaction.id} className="group px-5 py-3">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <p className="truncate text-sm font-medium text-terminal-navy">
                       {transaction.description}
                     </p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 dark:text-slate-400">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                       <span>{transaction.categoryName}</span>
                       <span aria-hidden>·</span>
                       <span>{formatDayShort(transaction.date)}</span>
                       {transaction.source === 'chase_import' && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        <span className="rounded bg-terminal-cream px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
                           Imported
                         </span>
                       )}
@@ -96,7 +96,7 @@ export default function TransactionList({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
-                    <span className="tnum text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <span className="tnum text-sm font-medium text-terminal-navy">
                       {formatUSD(transaction.amount)}
                     </span>
                     <div className="flex opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
@@ -123,10 +123,8 @@ export default function TransactionList({
                 </div>
 
                 {confirmingDelete === transaction.id && (
-                  <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
-                    <span className="text-xs text-slate-600 dark:text-slate-300">
-                      Delete this entry?
-                    </span>
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-terminal-cream px-3 py-2">
+                    <span className="text-xs text-slate-600">Delete this entry?</span>
                     <span className="flex gap-1.5">
                       <Button
                         variant="ghost"
@@ -153,8 +151,8 @@ export default function TransactionList({
         )}
 
         {transactions.length > 0 && (
-          <footer className="mt-auto flex items-center justify-between border-t border-slate-200 px-5 py-3 text-sm dark:border-slate-800">
-            <span className="font-medium text-slate-600 dark:text-slate-400">Total</span>
+          <footer className="mt-auto flex items-center justify-between border-t border-terminal-navy/10 px-5 py-3 text-sm">
+            <span className="font-medium text-slate-600">Total</span>
             <Amount value={total} className="font-semibold" />
           </footer>
         )}

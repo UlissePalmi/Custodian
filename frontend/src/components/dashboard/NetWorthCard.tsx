@@ -42,11 +42,9 @@ export default function NetWorthCard({ data }: { data: NetWorthSummary }) {
     <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
-            Net worth
-          </h2>
+          <h2 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">Net worth</h2>
           {/* Hero figure — proportional figures, not tabular, at display size. */}
-          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-slate-50">
+          <p className="font-terminal-serif mt-2 text-4xl font-bold tracking-tight text-terminal-navy sm:text-5xl">
             {formatUSD(data.total)}
           </p>
 
@@ -60,12 +58,10 @@ export default function NetWorthCard({ data }: { data: NetWorthSummary }) {
               <span className="tnum">
                 {formatUSDSigned(change.amount)} ({formatPercentSigned(change.percent)})
               </span>
-              <span className="font-normal text-slate-500 dark:text-slate-400">vs last month</span>
+              <span className="font-normal text-slate-500">vs last month</span>
             </p>
           ) : (
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              No prior month to compare against yet.
-            </p>
+            <p className="mt-2 text-sm text-slate-500">No prior month to compare against yet.</p>
           )}
         </div>
       </div>

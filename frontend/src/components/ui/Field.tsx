@@ -1,14 +1,11 @@
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 
 const CONTROL_CLASSES =
-  'h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-400'
+  'h-10 w-full rounded-lg border border-terminal-navy/20 bg-white px-3 text-sm text-terminal-navy transition-colors placeholder:text-slate-400 focus:border-terminal-navy'
 
 export function Label({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400"
-    >
+    <label htmlFor={htmlFor} className="mb-1.5 block text-xs font-medium text-slate-600">
       {children}
     </label>
   )
@@ -49,7 +46,7 @@ export function SelectField({ label, id, className = '', children, ...props }: S
 export function InlineSelect({ className = '', children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={`h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 ${className}`}
+      className={`h-8 w-full rounded-md border border-terminal-navy/20 bg-white px-2 text-xs text-terminal-navy ${className}`}
       {...props}
     >
       {children}

@@ -1,17 +1,7 @@
-import { useEffect, useState } from 'react'
-
 /**
- * Chart colour tokens.
- *
- * Recharts needs real colour values in JS, so the palette can't live in Tailwind
- * classes. Both columns are the same hues stepped for their own surface, and the
- * set was validated (lightness band, chroma floor, CVD separation, normal-vision
- * floor, contrast) against the card surfaces below — `#ffffff` light and
- * `#0f172a` dark. Re-run the validator if you change any of these.
- *
- * Note: in light mode `aqua` sits at 2.82:1 against white, under the 3:1 bar.
- * That is allowed only because every chart using it ships visible value labels
- * or an adjacent table (the allocation legend). Don't use it bare.
+ * Chart colour tokens — fixed to the app's navy/cream/gold terminal palette,
+ * not OS light/dark aware (the app no longer adapts to system theme). Recharts
+ * needs real colour values in JS, so this can't live in Tailwind classes alone.
  */
 export interface ChartTheme {
   /** Categorical slots, in fixed assignment order — never cycled. */
@@ -25,40 +15,18 @@ export interface ChartTheme {
   tooltipText: string
 }
 
-const LIGHT: ChartTheme = {
-  series: ['#2a78d6', '#e08fc8', '#1baf7a'],
+const TERMINAL_THEME: ChartTheme = {
+  series: ['#1b2640', '#d4af37', '#8b3a3a'],
   surface: '#ffffff',
-  grid: '#e2e8f0',
-  axis: '#64748b',
-  tooltipBg: '#ffffff',
-  tooltipBorder: '#e2e8f0',
-  tooltipText: '#0f172a',
+  grid: '#e5dfd0',
+  axis: '#6b6459',
+  tooltipBg: '#1b2640',
+  tooltipBorder: '#2a3a5c',
+  tooltipText: '#f5f0e6',
 }
 
-const DARK: ChartTheme = {
-  series: ['#3987e5', '#c860a8', '#199e70'],
-  surface: '#0f172a',
-  grid: '#1e293b',
-  axis: '#94a3b8',
-  tooltipBg: '#1e293b',
-  tooltipBorder: '#334155',
-  tooltipText: '#f1f5f9',
-}
-
-/** Tracks the OS colour scheme so charts restep rather than flip. */
 export function useChartTheme(): ChartTheme {
-  const [dark, setDark] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
-  )
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = (event: MediaQueryListEvent) => setDark(event.matches)
-    query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
-  }, [])
-
-  return dark ? DARK : LIGHT
+  return TERMINAL_THEME
 }
 
 /** Shared Recharts axis styling: recessive, hairline, never dashed. */

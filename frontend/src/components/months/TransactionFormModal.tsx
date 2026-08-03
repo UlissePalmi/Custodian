@@ -134,7 +134,7 @@ export default function TransactionFormModal({
           />
         </div>
 
-        {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+        {error && <p className="text-sm text-rose-600">{error}</p>}
       </form>
     </Modal>
   )

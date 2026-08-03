@@ -8,6 +8,7 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ErrorState, Skeleton } from '../components/ui/States'
 import { Amount } from '../components/ui/Amount'
+import { PageBody, PageHeader } from '../components/ui/PageHeader'
 import MonthSummary from '../components/months/MonthSummary'
 import TransactionList from '../components/months/TransactionList'
 import UploadButton from '../components/import/UploadButton'
@@ -25,7 +26,7 @@ function MonthNavLink({ monthKey, direction }: { monthKey: string | null; direct
   if (!monthKey) {
     return (
       <span
-        className="inline-flex size-9 items-center justify-center rounded-lg text-slate-300 dark:text-slate-700"
+        className="inline-flex size-9 items-center justify-center rounded-lg text-white/20"
         aria-hidden
       >
         <Icon className="size-5" />
@@ -37,7 +38,7 @@ function MonthNavLink({ monthKey, direction }: { monthKey: string | null; direct
     <Link
       to={`/months/${monthKey}`}
       aria-label={label}
-      className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+      className="inline-flex size-9 items-center justify-center rounded-lg border border-white/20 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
     >
       <Icon className="size-5" aria-hidden />
     </Link>
@@ -59,17 +60,19 @@ export default function MonthDetailPage() {
 
   if (!valid) {
     return (
-      <Card>
-        <div className="p-8 text-center">
-          <h1 className="text-lg font-semibold">Month not available</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Custodian's ledger runs from July 2026 onward.
-          </p>
-          <Link to="/months" className="mt-4 inline-block">
-            <Button>Back to months</Button>
-          </Link>
-        </div>
-      </Card>
+      <>
+        <PageHeader eyebrow="Ledger" title="Month not available" />
+        <PageBody>
+          <Card>
+            <div className="p-8 text-center">
+              <p className="text-sm text-slate-500">Custodian's ledger runs from July 2026 onward.</p>
+              <Link to="/months" className="mt-4 inline-block">
+                <Button>Back to months</Button>
+              </Link>
+            </div>
+          </Card>
+        </PageBody>
+      </>
     )
   }
 
@@ -85,73 +88,76 @@ export default function MonthDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <MonthNavLink monthKey={shiftMonthKey(monthKey, -1)} direction="prev" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{formatMonthLong(monthKey)}</h1>
-            <Link
-              to="/months"
-              className="text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-            >
-              All months
-            </Link>
+    <>
+      <PageHeader
+        eyebrow="Ledger"
+        title={formatMonthLong(monthKey)}
+        subtitle={
+          <Link to="/months" className="hover:text-white">
+            All months
+          </Link>
+        }
+        action={
+          <div className="flex items-center gap-2">
+            <MonthNavLink monthKey={shiftMonthKey(monthKey, -1)} direction="prev" />
+            <MonthNavLink monthKey={shiftMonthKey(monthKey, 1)} direction="next" />
           </div>
-          <MonthNavLink monthKey={shiftMonthKey(monthKey, 1)} direction="next" />
+        }
+      />
+      <PageBody>
+        <div className="flex justify-end">
+          <UploadButton monthKey={monthKey} onImported={handleImported} />
         </div>
 
-        <UploadButton monthKey={monthKey} onImported={handleImported} />
-      </header>
-
-      {importNotice && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm dark:border-emerald-800 dark:bg-emerald-950/40">
-          <p className="text-emerald-900 dark:text-emerald-200">
-            Imported {importNotice.importedCount} transactions. Cash changed by{' '}
-            <Amount value={importNotice.cashDelta} signed className="font-semibold" /> — net worth is
-            now <Amount value={importNotice.newNetWorthTotal} className="font-semibold" />.
-          </p>
-          <Button variant="ghost" size="sm" onClick={() => setImportNotice(null)}>
-            Dismiss
-          </Button>
-        </div>
-      )}
-
-      {error ? (
-        <Card>
-          <ErrorState error={error} onRetry={refetch} />
-        </Card>
-      ) : loading || !data ? (
-        <>
-          <Skeleton className="h-48 w-full rounded-2xl" />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Skeleton className="h-72 w-full rounded-2xl" />
-            <Skeleton className="h-72 w-full rounded-2xl" />
+        {importNotice && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm">
+            <p className="text-emerald-900">
+              Imported {importNotice.importedCount} transactions. Cash changed by{' '}
+              <Amount value={importNotice.cashDelta} signed className="font-semibold" /> — net worth is
+              now <Amount value={importNotice.newNetWorthTotal} className="font-semibold" />.
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setImportNotice(null)}>
+              Dismiss
+            </Button>
           </div>
-        </>
-      ) : (
-        <>
-          <MonthSummary ledger={data} />
+        )}
 
-          {/* Mobile stacks income above expenses; desktop shows them side by side. */}
-          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-            <TransactionList
-              monthKey={monthKey}
-              kind="income"
-              transactions={data.income}
-              total={data.totalIncome}
-              onChanged={handleChanged}
-            />
-            <TransactionList
-              monthKey={monthKey}
-              kind="expense"
-              transactions={data.expenses}
-              total={data.totalExpenses}
-              onChanged={handleChanged}
-            />
-          </div>
-        </>
-      )}
-    </div>
+        {error ? (
+          <Card>
+            <ErrorState error={error} onRetry={refetch} />
+          </Card>
+        ) : loading || !data ? (
+          <>
+            <Skeleton className="h-48 w-full rounded-2xl" />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Skeleton className="h-72 w-full rounded-2xl" />
+              <Skeleton className="h-72 w-full rounded-2xl" />
+            </div>
+          </>
+        ) : (
+          <>
+            <MonthSummary ledger={data} />
+
+            {/* Mobile stacks income above expenses; desktop shows them side by side. */}
+            <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+              <TransactionList
+                monthKey={monthKey}
+                kind="income"
+                transactions={data.income}
+                total={data.totalIncome}
+                onChanged={handleChanged}
+              />
+              <TransactionList
+                monthKey={monthKey}
+                kind="expense"
+                transactions={data.expenses}
+                total={data.totalExpenses}
+                onChanged={handleChanged}
+              />
+            </div>
+          </>
+        )}
+      </PageBody>
+    </>
   )
 }

@@ -65,7 +65,7 @@ export function Modal({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm dark:bg-slate-950/60"
+        className="absolute inset-0 bg-terminal-navy/50 backdrop-blur-sm"
         onClick={onClose}
         aria-label="Close dialog"
         tabIndex={-1}
@@ -73,21 +73,19 @@ export function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl dark:bg-slate-900 ${
+        className={`relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl ${
           size === 'lg' ? 'sm:max-w-3xl' : 'sm:max-w-md'
         }`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+        <header className="flex items-start justify-between gap-4 border-b border-terminal-navy/10 px-5 py-4">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
-            {description && (
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
-            )}
+            <h2 className="text-base font-semibold text-terminal-navy">{title}</h2>
+            {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="-m-1 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="-m-1 rounded-lg p-1 text-slate-400 transition-colors hover:bg-terminal-cream hover:text-terminal-navy"
             aria-label="Close"
           >
             <X className="size-5" aria-hidden />
@@ -97,7 +95,7 @@ export function Modal({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
         {footer && (
-          <footer className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4 pb-safe sm:pb-4 dark:border-slate-800">
+          <footer className="flex items-center justify-end gap-2 border-t border-terminal-navy/10 px-5 py-4 pb-safe sm:pb-4">
             {footer}
           </footer>
         )}

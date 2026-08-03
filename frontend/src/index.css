@@ -2,11 +2,21 @@
 
 /*
   Custodian base theme.
-  Restrained slate palette, emerald/rose reserved for signed money values only.
+  Fixed "analyst terminal" palette — navy chrome, cream page backgrounds, gold
+  accents, serif headline type — matching the Claude-designed DCF prototype
+  (Duolingo DCF Model (Standalone).html). This is a single, deliberate look:
+  the app no longer adapts to the OS light/dark preference, so components
+  should not use `dark:` variants.
 */
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --color-terminal-navy: #1b2640;
+  --color-terminal-navy-light: #263251;
+  --color-terminal-cream: #f5f0e6;
+  --color-terminal-gold: #d4af37;
+  --font-terminal-serif: Georgia, 'Times New Roman', serif;
 }
 
 @layer base {
@@ -15,8 +25,7 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
-    @apply dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-terminal-cream text-terminal-navy antialiased;
     font-family: var(--font-sans);
   }
 
@@ -28,7 +37,7 @@
 
   /* Keeps focus rings visible and consistent across custom controls. */
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-slate-900 dark:outline-slate-100;
+    @apply outline-2 outline-offset-2 outline-terminal-navy;
   }
 
   ::-webkit-scrollbar {
@@ -37,7 +46,8 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-slate-300 dark:bg-slate-700;
+    background-color: color-mix(in srgb, var(--color-terminal-navy) 30%, transparent);
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-track {

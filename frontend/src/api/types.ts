@@ -213,6 +213,127 @@ export interface ImportResult {
 }
 
 // ---------------------------------------------------------------------------
+// Stock models (3-statement + DCF)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw statement inputs. Every field is nullable — a period starts blank (or
+ * partially filled from a historical-data pull) and is edited cell by cell;
+ * subtotals (gross profit, EBITDA, FCF, ...) are always computed, never
+ * stored, same "derive don't store" rule as the yearly table.
+ */
+export interface IncomeStatementInputs {
+  revenue: number | null
+  costOfRevenue: number | null
+  researchAndDevelopment: number | null
+  salesAndMarketing: number | null
+  generalAndAdministrative: number | null
+  depreciationAmortization: number | null
+  stockBasedComp: number | null
+  interestIncome: number | null
+  interestExpense: number | null
+  incomeTax: number | null
+  dilutedShares: number | null
+}
+
+export interface BalanceSheetInputs {
+  /** Raw input only on a model's earliest period — every later period computes
+   *  this as `previous period's cash + this period's net change in cash`, so it
+   *  always ties to the cash flow statement's ending balance. */
+  cash: number | null
+  accountsReceivable: number | null
+  otherCurrentAssets: number | null
+  ppeNet: number | null
+  deferredRevenue: number | null
+  accountsPayable: number | null
+  accruedLiabilities: number | null
+  longTermDebt: number | null
+}
+
+export interface CashFlowInputs {
+  cashFromOperations: number | null
+  capex: number | null
+  cashFromFinancing: number | null
+  /** DCF-only working-capital swing, feeding `freeCashFlow()` — kept separate
+   *  from `cashFromOperations` above rather than decomposing that figure, since
+   *  the two aren't meant to reconcile to each other. */
+  changeInWorkingCapital: number | null
+}
+
+export interface StockPeriod {
+  year: number
+  /** False for a historical actual, true for a forecast year. */
+  isProjected: boolean
+  incomeStatement: IncomeStatementInputs
+  balanceSheet: BalanceSheetInputs
+  cashFlow: CashFlowInputs
+}
+
+export interface StockModelInput {
+  ticker: string
+  name: string
+  notes?: string
+  exchange?: string
+  sector?: string
+  waccPercent: number
+  terminalGrowthPercent: number
+  taxRatePercent: number
+  /** Total debt minus cash & equivalents — a standalone assumption for the
+   *  valuation bridge, not derived from any period's balance sheet. */
+  netDebt: number
+}
+
+export interface StockModel {
+  id: string
+  ticker: string
+  name: string
+  notes?: string
+  exchange?: string
+  sector?: string
+  waccPercent: number
+  terminalGrowthPercent: number
+  taxRatePercent: number
+  netDebt: number
+  /** Delayed quote, same feed as `Holding.currentPrice` — null until fetched
+   *  (e.g. an unrecognised ticker). */
+  currentPrice: number | null
+  quoteAsOf: string | null
+  /** Historical + projected years, in no particular order. */
+  periods: StockPeriod[]
+}
+
+/** One projected year's discounted cash flow. */
+export interface DcfYearProjection {
+  year: number
+  freeCashFlow: number
+  discountFactor: number
+  presentValue: number
+}
+
+export interface DcfResult {
+  projections: DcfYearProjection[]
+  terminalValue: number
+  presentValueOfTerminalValue: number
+  enterpriseValue: number
+  /** Total debt minus cash & short-term investments, from the latest period. */
+  netDebt: number
+  equityValue: number
+  /** Null when diluted shares aren't set on any period. */
+  fairValuePerShare: number | null
+  currentPrice: number | null
+  /** `(fairValuePerShare / currentPrice - 1) * 100`, null if either is missing. */
+  upsidePercent: number | null
+}
+
+/** WACC (rows) × terminal growth (columns) grid of implied fair value per share. */
+export interface SensitivityGrid {
+  waccPercentSteps: number[]
+  terminalGrowthPercentSteps: number[]
+  /** `fairValuePerShare[waccIndex][growthIndex]`; null where WACC <= growth. */
+  fairValuePerShare: (number | null)[][]
+}
+
+// ---------------------------------------------------------------------------
 // Client surface
 // ---------------------------------------------------------------------------
 
@@ -237,6 +358,14 @@ export interface CustodianApi {
    */
   uploadChaseFile(file: File, hintMonthKey?: string): Promise<ImportPreview>
   confirmImport(preview: ImportPreview): Promise<ImportResult>
+
+  getStockModels(): Promise<StockModel[]>
+  getStockModel(id: string): Promise<StockModel>
+  createStockModel(input: StockModelInput): Promise<StockModel>
+  updateStockModel(id: string, input: StockModelInput): Promise<StockModel>
+  deleteStockModel(id: string): Promise<void>
+  upsertStockPeriod(stockModelId: string, period: StockPeriod): Promise<StockPeriod>
+  deleteStockPeriod(stockModelId: string, year: number): Promise<void>
 }
 
 /** Thrown by the API layer for expected, user-facing failures. */

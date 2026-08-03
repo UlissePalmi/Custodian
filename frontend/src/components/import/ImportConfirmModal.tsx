@@ -87,7 +87,7 @@ export default function ImportConfirmModal({
       }
     >
       {alreadyImportedCount > 0 && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-terminal-navy/20 bg-terminal-cream px-3 py-2.5 text-sm text-slate-700">
           <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
             {alreadyImportedCount} {alreadyImportedCount === 1 ? 'transaction looks' : 'transactions look'}{' '}
@@ -97,7 +97,7 @@ export default function ImportConfirmModal({
       )}
 
       {flaggedCount > 0 && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
             {flaggedCount} {flaggedCount === 1 ? 'transaction' : 'transactions'} had no category
@@ -114,8 +114,8 @@ export default function ImportConfirmModal({
               row.include ? '' : 'opacity-45'
             } ${
               row.flaggedForReview && row.include
-                ? 'border-amber-300 bg-amber-50/60 dark:border-amber-800/70 dark:bg-amber-950/20'
-                : 'border-slate-200 dark:border-slate-800'
+                ? 'border-amber-300 bg-amber-50/60'
+                : 'border-terminal-navy/10'
             }`}
           >
             <div className="flex items-start gap-3">
@@ -123,17 +123,17 @@ export default function ImportConfirmModal({
                 type="checkbox"
                 checked={row.include}
                 onChange={(event) => updateRow(row.id, { include: event.target.checked })}
-                className="mt-1 size-4 shrink-0 rounded border-slate-300 accent-slate-900 dark:accent-slate-100"
+                className="mt-1 size-4 shrink-0 rounded border-terminal-navy/30 accent-terminal-navy"
                 aria-label={`Include ${row.description}`}
               />
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <p className="truncate text-sm font-medium text-terminal-navy">
                       {row.description}
                     </p>
-                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    <p className="mt-0.5 text-xs text-slate-500">
                       {formatDayShort(row.date)} · Chase: {row.chaseCategory || '—'}
                       {row.alreadyImported && ' · Already in the ledger'}
                     </p>
@@ -173,19 +173,19 @@ export default function ImportConfirmModal({
         ))}
       </ul>
 
-      <div className="mt-4 rounded-lg bg-slate-50 px-3 py-3 text-sm dark:bg-slate-800/50">
+      <div className="mt-4 rounded-lg bg-terminal-cream px-3 py-3 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-slate-600 dark:text-slate-400">Cash impact on net worth</span>
+          <span className="text-slate-600">Cash impact on net worth</span>
           <Amount value={cashDelta} signed className="font-semibold" />
         </div>
-        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mt-1.5 text-xs text-slate-500">
           {spansMultipleMonths
             ? "Confirming writes these entries to their respective months and applies this delta to your cash balance, updating net worth."
             : `Confirming writes these entries to ${monthLabel} and applies this delta to your cash balance, updating net worth.`}
         </p>
       </div>
 
-      {error && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+      {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
     </Modal>
   )
 }

@@ -7,7 +7,7 @@
  * backend or database running.
  */
 
-import type { CustodianApi, ImportPreview, TransactionInput } from './types'
+import type { CustodianApi, ImportPreview, StockModelInput, StockPeriod, TransactionInput } from './types'
 import { mockApi } from './mock/client'
 import { httpApi } from './http/client'
 
@@ -29,6 +29,16 @@ export const deleteTransaction = (id: string) => api.deleteTransaction(id)
 export const uploadChaseFile = (file: File, hintMonthKey?: string) =>
   api.uploadChaseFile(file, hintMonthKey)
 export const confirmImport = (preview: ImportPreview) => api.confirmImport(preview)
+
+export const getStockModels = () => api.getStockModels()
+export const getStockModel = (id: string) => api.getStockModel(id)
+export const createStockModel = (input: StockModelInput) => api.createStockModel(input)
+export const updateStockModel = (id: string, input: StockModelInput) => api.updateStockModel(id, input)
+export const deleteStockModel = (id: string) => api.deleteStockModel(id)
+export const upsertStockPeriod = (stockModelId: string, period: StockPeriod) =>
+  api.upsertStockPeriod(stockModelId, period)
+export const deleteStockPeriod = (stockModelId: string, year: number) =>
+  api.deleteStockPeriod(stockModelId, year)
 
 export { resetStore } from './mock/store'
 export * from './types'
