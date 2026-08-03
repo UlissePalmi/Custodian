@@ -9,6 +9,7 @@ from app.models.category import Category
 
 MANUAL = "manual"
 CHASE_IMPORT = "chase_import"
+PLAID = "plaid"
 
 
 class Transaction(Base):
@@ -22,7 +23,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_transaction_amount_positive"),
-        CheckConstraint("source IN ('manual', 'chase_import')", name="ck_transaction_source"),
+        CheckConstraint("source IN ('manual', 'chase_import', 'plaid')", name="ck_transaction_source"),
         Index("ix_transactions_date", "date"),
     )
 
@@ -35,6 +36,10 @@ class Transaction(Base):
     import_batch_id: Mapped[str | None] = mapped_column(
         ForeignKey("import_batches.batch_id", ondelete="CASCADE"), nullable=True, index=True
     )
+    #: Plaid's own transaction id — the sync path's idempotency guard, since a
+    #: pending-to-posted transition can shift amount/description slightly and
+    #: make the natural-key dedup (see services/dedup.py) unreliable on its own.
+    plaid_transaction_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
 
     # Eager-loaded because every serialised transaction carries `categoryName`
     # and `kind` — a lazy load here would be an N+1 on every ledger read.

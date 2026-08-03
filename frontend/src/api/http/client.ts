@@ -15,9 +15,11 @@ import {
   type Holding,
   type ImportPreview,
   type ImportResult,
+  type LinkTokenResponse,
   type MonthInfo,
   type MonthLedger,
   type NetWorthSummary,
+  type PlaidConnection,
   type StockModel,
   type StockModelInput,
   type StockPeriod,
@@ -96,6 +98,22 @@ export const httpApi: CustodianApi = {
 
   confirmImport: (preview: ImportPreview) =>
     jsonRequest<ImportResult>('/import/chase/confirm', 'POST', preview),
+
+  getPlaidLinkToken: () => request<LinkTokenResponse>('/plaid/link-token', { method: 'POST' }),
+
+  exchangePlaidToken: (publicToken: string, institutionId?: string, institutionName?: string) =>
+    jsonRequest<PlaidConnection>('/plaid/exchange-token', 'POST', {
+      publicToken,
+      institutionId,
+      institutionName,
+    }),
+
+  syncPlaidNow: () => request<ImportResult[]>('/plaid/sync-now', { method: 'POST' }),
+
+  getPlaidStatus: () => request<PlaidConnection[]>('/plaid/status'),
+
+  disconnectPlaid: (itemId: string) =>
+    request<void>(`/plaid/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' }),
 
   getStockModels: () => request<StockModel[]>('/stocks'),
 

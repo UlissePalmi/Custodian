@@ -32,6 +32,8 @@ TABLES = (
     "price_quotes",
     "net_worth_snapshots",
     "chase_category_map",
+    "plaid_category_map",
+    "plaid_items",
     "accounts",
     "categories",
 )

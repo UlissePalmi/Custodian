@@ -36,7 +36,7 @@ export interface Category {
 // Transactions / monthly ledger
 // ---------------------------------------------------------------------------
 
-export type TransactionSource = 'manual' | 'chase_import'
+export type TransactionSource = 'manual' | 'chase_import' | 'plaid'
 
 export interface Transaction {
   id: string
@@ -213,6 +213,25 @@ export interface ImportResult {
 }
 
 // ---------------------------------------------------------------------------
+// Plaid bank sync
+// ---------------------------------------------------------------------------
+
+export interface LinkTokenResponse {
+  /** Passed straight to `usePlaidLink` — short-lived, fetch fresh per attempt. */
+  linkToken: string
+}
+
+export interface PlaidConnection {
+  itemId: string
+  institutionName: string
+  status: 'active' | 'error' | 'disconnected'
+  /** Null until the first sync has run. */
+  lastSyncedAt: string | null
+  /** Set when `status === 'error'`; the last sync failure, if any. */
+  lastError: string | null
+}
+
+// ---------------------------------------------------------------------------
 // Stock models (3-statement + DCF)
 // ---------------------------------------------------------------------------
 
@@ -358,6 +377,24 @@ export interface CustodianApi {
    */
   uploadChaseFile(file: File, hintMonthKey?: string): Promise<ImportPreview>
   confirmImport(preview: ImportPreview): Promise<ImportResult>
+
+  /** Server-issued token for `usePlaidLink`'s Link flow. */
+  getPlaidLinkToken(): Promise<LinkTokenResponse>
+  /**
+   * Exchanges Link's `public_token` for a stored connection and runs the
+   * first sync immediately, so newly imported transactions show up without
+   * waiting for the next scheduled run.
+   */
+  exchangePlaidToken(
+    publicToken: string,
+    institutionId?: string,
+    institutionName?: string,
+  ): Promise<PlaidConnection>
+  /** Runs a sync for every linked connection right now. */
+  syncPlaidNow(): Promise<ImportResult[]>
+  getPlaidStatus(): Promise<PlaidConnection[]>
+  /** Unlinks the connection. Past transactions/batches are untouched. */
+  disconnectPlaid(itemId: string): Promise<void>
 
   getStockModels(): Promise<StockModel[]>
   getStockModel(id: string): Promise<StockModel>

@@ -63,6 +63,98 @@ systemctl status custodian custodian-frontend
 
 Logs: `journalctl -u custodian -f` (or `-u custodian-frontend`).
 
+## 5. Plaid bank sync (optional)
+
+Automatically pulls Chase transactions on a schedule instead of uploading a
+PDF/CSV by hand — an alternative front door into the same ledger, not a
+replacement for it. Skip this section entirely if you don't want it; the app
+runs fine without any of the following configured.
+
+### 5a. Tailscale HTTPS
+
+Plaid's OAuth handoff with Chase requires an HTTPS redirect URI, and this app
+is normally reached over plain HTTP. Both services need the cert — once the
+page loads over HTTPS, browsers block calls to a plain-HTTP API as mixed
+content.
+
+```bash
+sudo tailscale cert --cert-file /home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.crt \
+                     --key-file  /home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.key \
+                     <pi-name>.<tailnet>.ts.net
+```
+
+Then:
+
+* Add to `frontend/.env`:
+  ```
+  TAILSCALE_CERT_FILE=/home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.crt
+  TAILSCALE_KEY_FILE=/home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.key
+  VITE_API_BASE_URL=https://<pi-name>.<tailnet>.ts.net:8000/api
+  ```
+* Edit `/etc/systemd/system/custodian.service`'s `ExecStart` to add
+  `--ssl-certfile=.../tls/tailscale.crt --ssl-keyfile=.../tls/tailscale.key`
+  (native uvicorn flags).
+* Widen `backend/.env`'s `CORS_ORIGIN_REGEX` to `https?://[^/]+:5173` while
+  both schemes need to work, then back to `https://[^/]+:5173` once done.
+* `sudo systemctl daemon-reload && sudo systemctl restart custodian custodian-frontend`
+
+Open the app at `https://<pi-name>.<tailnet>.ts.net:5173` and confirm there
+are no mixed-content errors in the browser console. Tailscale certs expire
+roughly every 90 days — re-run the `tailscale cert` command and restart both
+services to renew.
+
+### 5b. Plaid credentials
+
+Get a client id and secret from the [Plaid dashboard](https://dashboard.plaid.com);
+the free Trial plan covers a single-user app's transaction sync at no cost.
+Add to `backend/.env`:
+
+```
+PLAID_CLIENT_ID=...
+PLAID_SECRET=...
+PLAID_ENV=sandbox        # switch to production once you're ready to link the real account
+PLAID_REDIRECT_URI=https://<pi-name>.<tailnet>.ts.net:5173/
+PLAID_TOKEN_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+`PLAID_REDIRECT_URI` must exactly match a redirect URI registered in the
+Plaid dashboard. Test against `PLAID_ENV=sandbox` first — Plaid's sandbox
+institutions don't require the real HTTPS/OAuth setup above, so you can
+validate the link → sync → reverse flow before spending a real Production
+Item on it.
+
+```bash
+cd ~/Documents/Custodian/backend
+.venv/bin/pip install -r requirements.txt   # adds plaid-python, cryptography
+.venv/bin/alembic upgrade head
+sudo systemctl restart custodian
+```
+
+Then open the app, click **Connect Chase** in the sidebar, and complete
+Plaid Link.
+
+### 5c. The sync timer
+
+```bash
+cd ~/Documents/Custodian/backend/deploy
+sudo cp custodian-plaid-sync.service custodian-plaid-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now custodian-plaid-sync.timer
+systemctl list-timers custodian-plaid-sync.timer
+```
+
+Runs hourly and catches up on the next boot if the Pi was offline. Logs:
+`journalctl -u custodian-plaid-sync -f`. Trigger a sync immediately instead of
+waiting for the timer: `sudo systemctl start custodian-plaid-sync.service`.
+
+Unlinking a connection (`DELETE /api/plaid/items/{itemId}`, or "Disconnect" in
+the sidebar) stops future syncs but leaves past transactions in the ledger —
+that's a separate action, same as a Chase import:
+
+```bash
+curl -X DELETE localhost:8000/api/import/batches/<batchId>   # reverses one sync's transactions
+```
+
 ## If the Pi's address changes
 
 The front end's API URL is fixed in `frontend/.env`, so it needs updating:

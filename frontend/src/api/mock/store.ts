@@ -18,6 +18,7 @@ import {
   type MonthLedger,
   type NetWorthPoint,
   type NetWorthSummary,
+  type PlaidConnection,
   type StockModel,
   type StockModelInput,
   type StockPeriod,
@@ -64,11 +65,13 @@ interface StoreState {
   nextTransactionSeq: number
   stockModels: StockModel[]
   nextStockModelSeq: number
+  plaidConnections: PlaidConnection[]
 }
 
-// Bumped to v2 when stock models were added — the v1 shape has no `stockModels`
-// field, and per the fallback below, an old snapshot just resets to seed data.
-const STORAGE_KEY = 'custodian.mock.v2'
+// Bumped to v3 when Plaid connections were added — older snapshots have no
+// `plaidConnections` field, and per the fallback below, an old snapshot just
+// resets to seed data rather than crashing on a missing array.
+const STORAGE_KEY = 'custodian.mock.v3'
 
 function initialState(): StoreState {
   return {
@@ -82,6 +85,7 @@ function initialState(): StoreState {
     nextTransactionSeq: SEED_TRANSACTIONS.length + 1,
     stockModels: SEED_STOCK_MODELS.map((s) => ({ ...s, periods: s.periods.map((p) => ({ ...p })) })),
     nextStockModelSeq: SEED_STOCK_MODELS.length + 1,
+    plaidConnections: [],
   }
 }
 
@@ -95,7 +99,8 @@ function load(): StoreState {
     if (
       !Array.isArray(parsed.transactions) ||
       !Array.isArray(parsed.categories) ||
-      !Array.isArray(parsed.stockModels)
+      !Array.isArray(parsed.stockModels) ||
+      !Array.isArray(parsed.plaidConnections)
     ) {
       return initialState()
     }
@@ -409,6 +414,54 @@ export function categoryIdsByKind(kind: Category['kind']): string[] {
   return readCategories()
     .filter((c) => c.kind === kind)
     .map((c) => c.id)
+}
+
+// ---------------------------------------------------------------------------
+// Plaid bank sync
+// ---------------------------------------------------------------------------
+
+export function readPlaidConnections(): PlaidConnection[] {
+  return state.plaidConnections.map((c) => ({ ...c }))
+}
+
+/**
+ * Links a new connection and inserts its fabricated first batch of
+ * transactions — the mock's stand-in for the real backend's "exchange the
+ * token, then run the first sync" behaviour.
+ */
+export function linkPlaidConnection(
+  itemId: string,
+  institutionName: string,
+  rows: Array<{ date: string; amount: number; description: string; categoryId: string; kind: Category['kind'] }>,
+): { connection: PlaidConnection; cashDelta: number } {
+  let cashDelta = 0
+  for (const row of rows) {
+    insertTransaction(
+      { date: row.date, amount: row.amount, description: row.description, categoryId: row.categoryId },
+      { source: 'plaid' },
+    )
+    cashDelta += row.kind === 'income' ? row.amount : -row.amount
+  }
+  cashDelta = roundCents(cashDelta)
+  state.cashBalance = roundCents(state.cashBalance + cashDelta)
+
+  const connection: PlaidConnection = {
+    itemId,
+    institutionName,
+    status: 'active',
+    lastSyncedAt: new Date().toISOString(),
+    lastError: null,
+  }
+  state.plaidConnections = [...state.plaidConnections.filter((c) => c.itemId !== itemId), connection]
+  persist()
+  return { connection, cashDelta }
+}
+
+export function removePlaidConnection(itemId: string): void {
+  const existed = state.plaidConnections.some((c) => c.itemId === itemId)
+  if (!existed) throw new ApiError('Plaid connection not found.', 404)
+  state.plaidConnections = state.plaidConnections.filter((c) => c.itemId !== itemId)
+  persist()
 }
 
 // ---------------------------------------------------------------------------

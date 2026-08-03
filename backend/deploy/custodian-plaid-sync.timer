@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Custodian's Plaid bank sync periodically
+
+[Timer]
+OnCalendar=hourly
+# A missed run (Pi offline, reboot) fires as soon as the timer is next active,
+# instead of waiting for the next scheduled hour.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -9,6 +9,8 @@ from app.models.category import Category
 from app.models.chase_map import ChaseCategoryMap
 from app.models.holding import Holding
 from app.models.import_batch import ImportBatch
+from app.models.plaid_category_map import PlaidCategoryMap
+from app.models.plaid_item import PlaidItem
 from app.models.price_quote import PriceQuote
 from app.models.snapshot import NetWorthSnapshot
 from app.models.transaction import Transaction
@@ -20,6 +22,8 @@ __all__ = [
     "Holding",
     "ImportBatch",
     "NetWorthSnapshot",
+    "PlaidCategoryMap",
+    "PlaidItem",
     "PriceQuote",
     "Transaction",
 ]

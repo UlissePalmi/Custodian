@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { NAV_ITEMS, isNavItemActive } from './navItems'
 import UploadButton from '../import/UploadButton'
+import ConnectBankButton from '../plaid/ConnectBankButton'
 
 /** Persistent left navigation, desktop only (>= lg). */
 export default function Sidebar({ onImported }: { onImported?: () => void }) {
@@ -40,7 +41,8 @@ export default function Sidebar({ onImported }: { onImported?: () => void }) {
         </ul>
       </nav>
 
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/10 p-3 space-y-2">
+        <ConnectBankButton className="w-full" />
         <UploadButton onImported={onImported} className="w-full" />
       </div>
     </aside>

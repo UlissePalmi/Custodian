@@ -30,6 +30,13 @@ export const uploadChaseFile = (file: File, hintMonthKey?: string) =>
   api.uploadChaseFile(file, hintMonthKey)
 export const confirmImport = (preview: ImportPreview) => api.confirmImport(preview)
 
+export const getPlaidLinkToken = () => api.getPlaidLinkToken()
+export const exchangePlaidToken = (publicToken: string, institutionId?: string, institutionName?: string) =>
+  api.exchangePlaidToken(publicToken, institutionId, institutionName)
+export const syncPlaidNow = () => api.syncPlaidNow()
+export const getPlaidStatus = () => api.getPlaidStatus()
+export const disconnectPlaid = (itemId: string) => api.disconnectPlaid(itemId)
+
 export const getStockModels = () => api.getStockModels()
 export const getStockModel = (id: string) => api.getStockModel(id)
 export const createStockModel = (input: StockModelInput) => api.createStockModel(input)

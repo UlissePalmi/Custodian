@@ -149,6 +149,7 @@ def create_transaction(
     *,
     source: str = "manual",
     import_batch_id: str | None = None,
+    plaid_transaction_id: str | None = None,
     commit: bool = True,
 ) -> Transaction:
     if month_key_from_date(payload.date) != month_key:
@@ -162,6 +163,7 @@ def create_transaction(
         category_id=category.id,
         source=source,
         import_batch_id=import_batch_id,
+        plaid_transaction_id=plaid_transaction_id,
     )
     db.add(transaction)
 

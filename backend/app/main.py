@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.errors import register_error_handlers
-from app.routers import categories, chase_import, months, portfolio, transactions, yearly
+from app.routers import categories, chase_import, months, plaid, portfolio, transactions, yearly
 
 
 def create_app() -> FastAPI:
@@ -30,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(yearly.router)
     app.include_router(portfolio.router)
     app.include_router(chase_import.router)
+    app.include_router(plaid.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

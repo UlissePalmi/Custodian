@@ -23,6 +23,7 @@ from app.models import (
     ChaseCategoryMap,
     Holding,
     NetWorthSnapshot,
+    PlaidCategoryMap,
     Transaction,
 )
 
@@ -60,6 +61,29 @@ CHASE_CATEGORY_MAP = {
     "ACH_CREDIT": "cat-main-income",
 }
 
+# Plaid's `personal_finance_category.primary` enum. Editable through the
+# database as Plaid adds values; unmapped ones fall through to a fallback
+# income/expense category (see services/plaid_sync.py's `_propose`), same
+# behaviour as an unmapped Chase category.
+PLAID_CATEGORY_MAP = {
+    "INCOME": "cat-main-income",
+    "TRANSFER_IN": "cat-main-income",
+    "TRANSFER_OUT": "cat-other",
+    "LOAN_PAYMENTS": "cat-other",
+    "BANK_FEES": "cat-other",
+    "ENTERTAINMENT": "cat-subscriptions",
+    "FOOD_AND_DRINK": "cat-dining",
+    "GENERAL_MERCHANDISE": "cat-other",
+    "HOME_IMPROVEMENT": "cat-other",
+    "MEDICAL": "cat-other",
+    "PERSONAL_CARE": "cat-other",
+    "GENERAL_SERVICES": "cat-subscriptions",
+    "GOVERNMENT_AND_NON_PROFIT": "cat-other",
+    "TRANSPORTATION": "cat-transport",
+    "TRAVEL": "cat-transport",
+    "RENT_AND_UTILITIES": "cat-utilities",
+}
+
 ACCOUNTS = [("Cash", "cash"), ("Bonds", "bonds"), ("Brokerage", "stocks")]
 
 
@@ -72,6 +96,10 @@ def seed_base(db: Session) -> None:
     for chase_category, category_id in CHASE_CATEGORY_MAP.items():
         if db.get(ChaseCategoryMap, chase_category) is None:
             db.add(ChaseCategoryMap(chase_category=chase_category, category_id=category_id))
+
+    for plaid_category, category_id in PLAID_CATEGORY_MAP.items():
+        if db.get(PlaidCategoryMap, plaid_category) is None:
+            db.add(PlaidCategoryMap(plaid_category=plaid_category, category_id=category_id))
 
     for name, account_type in ACCOUNTS:
         existing = db.scalar(select(Account).where(Account.type == account_type))

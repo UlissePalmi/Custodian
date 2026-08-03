@@ -1,0 +1,35 @@
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.schemas.chase import ImportResult
+from app.schemas.plaid import ExchangeTokenRequest, LinkTokenResponse, PlaidConnection
+from app.services import plaid_link, plaid_sync
+
+router = APIRouter(prefix="/api/plaid", tags=["plaid"])
+
+
+@router.post("/link-token", response_model=LinkTokenResponse)
+def create_link_token(db: Session = Depends(get_db)):
+    return {"link_token": plaid_link.create_link_token(db)}
+
+
+@router.post("/exchange-token", response_model=PlaidConnection)
+def exchange_token(body: ExchangeTokenRequest, db: Session = Depends(get_db)):
+    return plaid_link.exchange_public_token(db, body.public_token, body.institution_name)
+
+
+@router.post("/sync-now", response_model=list[ImportResult])
+def sync_now(db: Session = Depends(get_db)):
+    return plaid_sync.sync_all_items(db)
+
+
+@router.get("/status", response_model=list[PlaidConnection])
+def status(db: Session = Depends(get_db)):
+    return plaid_link.list_connections(db)
+
+
+@router.delete("/items/{item_id}", status_code=204, response_class=Response)
+def disconnect(item_id: str, db: Session = Depends(get_db)) -> Response:
+    plaid_link.disconnect_item(db, item_id)
+    return Response(status_code=204)

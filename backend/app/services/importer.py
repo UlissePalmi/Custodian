@@ -9,7 +9,6 @@ double-counting.
 
 import re
 import secrets
-from collections import Counter
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -29,6 +28,7 @@ from app.schemas.chase import ImportPreview
 from app.schemas.ledger import TransactionInput
 from app.services import networth
 from app.services.chase_parser import ParsedRow, dominant_month, parse_chase_file
+from app.services.dedup import existing_transaction_counts, natural_key
 from app.services.ledger import create_transaction
 
 ACCEPTED_EXTENSIONS = (".csv", ".xls", ".xlsx", ".pdf")
@@ -93,31 +93,6 @@ def _propose_category(
     return fallback, True
 
 
-def _natural_key(txn_date, description: str, amount, kind: str) -> tuple:
-    return (txn_date, description.strip().lower(), amount, kind)
-
-
-def _existing_transaction_counts(db: Session, rows: list[ParsedRow]) -> Counter:
-    """Counts of (date, description, amount, kind) already in the ledger.
-
-    A parsed row matching one of these keys is the same real-world
-    transaction, however it originally got there — a manual entry blocks a
-    duplicate import just as much as an earlier Chase import would. Counted
-    rather than a plain set, so two genuinely repeated transactions (e.g. two
-    identical coffees on the same day) aren't both treated as duplicates when
-    only one of them is actually already in the ledger.
-    """
-    if not rows:
-        return Counter()
-    dates = [row.date for row in rows]
-    existing = db.execute(
-        select(Transaction.date, Transaction.description, Transaction.amount, Category.kind)
-        .join(Category, Category.id == Transaction.category_id)
-        .where(Transaction.date >= min(dates), Transaction.date <= max(dates))
-    ).all()
-    return Counter(_natural_key(*row) for row in existing)
-
-
 def build_preview(
     db: Session, content: bytes, filename: str, hint_month_key: str | None = None
 ) -> dict:
@@ -129,7 +104,7 @@ def build_preview(
     rows = parse_chase_file(content, filename)
     detected_month_key = _detect_month(rows, filename, hint_month_key)
     mapping, kinds = _category_lookup(db)
-    remaining_existing = _existing_transaction_counts(db, rows)
+    remaining_existing = existing_transaction_counts(db, [row.date for row in rows])
 
     transactions = []
     for index, row in enumerate(rows, start=1):
@@ -138,7 +113,7 @@ def build_preview(
         # back unticked rather than failing at confirm time.
         too_old = compare_month_keys(month_key_from_date(row.date), LEDGER_START) < 0
 
-        key = _natural_key(row.date, row.description, row.amount, row.kind)
+        key = natural_key(row.date, row.description, row.amount, row.kind)
         already_imported = remaining_existing[key] > 0
         if already_imported:
             remaining_existing[key] -= 1

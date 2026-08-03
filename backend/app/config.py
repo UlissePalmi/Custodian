@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     #: host, so the LAN address and a Tailscale name both work.
     cors_origin_regex: str = r"http://[^/]+:5173"
 
+    #: Plaid API credentials. Empty by default so the app still boots without
+    #: bank sync configured; the Plaid endpoints fail loudly if used unset.
+    plaid_client_id: str = ""
+    plaid_secret: str = ""
+    plaid_env: str = "sandbox"
+    plaid_redirect_uri: str = ""
+    #: Fernet key encrypting stored Plaid access tokens. Generate with:
+    #: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    plaid_token_encryption_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

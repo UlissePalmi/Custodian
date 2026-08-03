@@ -1,0 +1,17 @@
+[Unit]
+Description=Custodian — Plaid bank sync (one-shot)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=ulisse
+Group=ulisse
+WorkingDirectory=/home/ulisse/Documents/Custodian/backend
+EnvironmentFile=/home/ulisse/Documents/Custodian/backend/.env
+ExecStart=/home/ulisse/Documents/Custodian/backend/.venv/bin/python -m app.plaid_sync_cli
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
