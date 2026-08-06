@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.imports import ImportResult
 from app.schemas.plaid import ExchangeTokenRequest, LinkTokenResponse, PlaidConnection
-from app.services import plaid_link, plaid_sync
+from app.services import plaid_investments, plaid_link, plaid_sync
 
 router = APIRouter(prefix="/api/plaid", tags=["plaid"])
 
@@ -21,7 +21,11 @@ def exchange_token(body: ExchangeTokenRequest, db: Session = Depends(get_db)):
 
 @router.post("/sync-now", response_model=list[ImportResult])
 def sync_now(db: Session = Depends(get_db)):
-    return plaid_sync.sync_all_items(db)
+    results = plaid_sync.sync_all_items(db)
+    # Positions are refreshed too, but have no batch to report: Plaid states
+    # what the account holds now, so there is nothing incremental to return.
+    plaid_investments.sync_all_holdings(db)
+    return results
 
 
 @router.get("/status", response_model=list[PlaidConnection])

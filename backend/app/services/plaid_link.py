@@ -19,7 +19,16 @@ from app.errors import ApiError
 from app.models import PlaidItem
 from app.services.crypto import decrypt_token, encrypt_token
 from app.services.plaid_client import get_plaid_client
+from app.services.plaid_investments import sync_holdings
 from app.services.plaid_sync import sync_item
+
+
+#: Consent is scoped per product, not per account: authorising a brokerage
+#: account during Link still yields ADDITIONAL_CONSENT_REQUIRED on
+#: /investments/holdings/get unless 'investments' was requested here. Both are
+#: asked for up front so a connection never has to be redone to widen it.
+#: Institutions without a brokerage simply return no investment accounts.
+LINK_PRODUCTS = ["transactions", "investments"]
 
 
 def create_link_token(db: Session) -> str:
@@ -27,7 +36,7 @@ def create_link_token(db: Session) -> str:
     kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="custodian-single-user"),
         client_name="Custodian",
-        products=[Products("transactions")],
+        products=[Products(p) for p in LINK_PRODUCTS],
         country_codes=[CountryCode("US")],
         language="en",
     )
@@ -56,6 +65,12 @@ def exchange_public_token(db: Session, public_token: str, institution_name: str 
     db.refresh(item)
 
     sync_item(db, item)
+    try:
+        sync_holdings(db, item)
+    except Exception:
+        # No investments consent, or no brokerage at this institution — the
+        # connection is still good for transactions.
+        db.rollback()
     db.refresh(item)
     return item
 

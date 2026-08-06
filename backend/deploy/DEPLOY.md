@@ -177,7 +177,8 @@ sudo systemctl enable --now custodian-plaid-sync.timer
 systemctl list-timers custodian-plaid-sync.timer
 ```
 
-Runs hourly and catches up on the next boot if the Pi was offline. Logs:
+Each run pulls new transactions and refreshes brokerage positions. Runs hourly
+and catches up on the next boot if the Pi was offline. Logs:
 `journalctl -u custodian-plaid-sync -f`. Trigger a sync immediately instead of
 waiting for the timer: `sudo systemctl start custodian-plaid-sync.service`.
 
@@ -204,7 +205,9 @@ this also means reaching the app over a Tailscale name works as soon as
 
 ## Day-to-day
 
-Recording what you own — there is no UI for holdings or balances yet:
+Recording what you own — there is no UI for balances or manual holdings yet.
+Positions in a linked brokerage sync themselves; add holdings here only for
+things Plaid cannot see, such as a bond bought direct:
 
 ```bash
 # Set the cash and bonds balances (account ids come from GET /api/accounts)
