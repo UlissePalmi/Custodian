@@ -162,12 +162,18 @@ export interface AccountHoldingLine {
 export interface AccountBreakdown {
   id: number
   name: string
+  /** The account's own kind: cash, stocks, bonds, credit. */
   type: AssetClass | 'credit' | (string & {})
+  /** Where this row counts in the allocation, which is not always `type`: a
+   *  card's debt and a brokerage's uninvested cash both count as cash. A
+   *  brokerage with idle cash yields two rows, so group by this, not `type`. */
+  assetClass: AssetClass | (string & {})
   currency: string
   /** In the account's own currency; `value` is the USD figure net worth uses. */
   balance: number
-  /** Contribution to net worth: negative for a credit account, and cash plus
-   *  positions for a brokerage. These sum to the net worth total. */
+  /** Contribution to net worth under `assetClass`: negative for a credit
+   *  account, positions only for a brokerage's stocks row. Summing every row
+   *  gives the net worth total. */
   value: number
   percent: number
   /** False for accounts Plaid cannot see, which are maintained by hand. */

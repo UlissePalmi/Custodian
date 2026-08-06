@@ -146,12 +146,13 @@ def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
     'EURUSD=X'), so this picks up the delayed-refresh/offline-fallback behavior
     quotes already have for free.
 
-    Two account types are not simply summed under their own name. A credit
+    An account's balance does not always count under its own name. A credit
     account holds what is *owed*, so it nets against cash rather than counting
     as an asset — net worth means assets minus debts. And a stocks account's
-    balance is only the uninvested cash sitting in the brokerage; its positions
-    come from `holdings`, so the two are added rather than one replacing the
-    other.
+    balance is the *uninvested* cash sitting in the brokerage: money that is
+    not exposed to the market, so counting it as stocks would overstate that
+    exposure. It counts as cash, while the account's positions come from
+    `holdings` and count as stocks.
     """
     accounts = list(db.scalars(select(Account)))
     fx_tickers = [_fx_ticker(a.currency) for a in accounts if a.currency != "usd"]
@@ -165,6 +166,9 @@ def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
             balance = round_cents(balance * rate.price) if rate is not None else ZERO
         if account.type == "credit":
             totals["cash"] = round_cents(totals["cash"] - balance)
+            continue
+        if account.type == "stocks":
+            totals["cash"] = round_cents(totals["cash"] + balance)
             continue
         totals[account.type] = round_cents(totals.get(account.type, ZERO) + balance)
     for asset_class, value in holdings_value_by_type(db).items():
@@ -208,6 +212,21 @@ def accounts_breakdown(db: Session) -> list[dict]:
 
     total, _ = compute_totals(db)
 
+    def row(account: Account, asset_class: str, value: Decimal, lines: list[dict]) -> dict:
+        return {
+            "id": account.id,
+            "name": account.name,
+            "type": account.type,
+            "asset_class": asset_class,
+            "currency": account.currency,
+            "balance": account.balance,
+            "value": value,
+            "percent": percent_of(value, total),
+            "is_connected": account.plaid_account_id is not None,
+            "balance_as_of": account.plaid_balance_as_of,
+            "holdings": lines,
+        }
+
     rows = []
     for account in accounts:
         balance = account.balance
@@ -217,23 +236,19 @@ def accounts_breakdown(db: Session) -> list[dict]:
 
         lines = sorted(by_account.get(account.id, []), key=lambda h: h["ticker"])
         holdings_value = round_cents(sum((h["market_value"] for h in lines), ZERO))
-        # A credit account holds what is owed, so it counts against net worth.
-        value = round_cents(-balance if account.type == "credit" else balance + holdings_value)
 
-        rows.append(
-            {
-                "id": account.id,
-                "name": account.name,
-                "type": account.type,
-                "currency": account.currency,
-                "balance": account.balance,
-                "value": value,
-                "percent": percent_of(value, total),
-                "is_connected": account.plaid_account_id is not None,
-                "balance_as_of": account.plaid_balance_as_of,
-                "holdings": lines,
-            }
-        )
+        if account.type == "credit":
+            # What is owed counts against net worth, and against cash.
+            rows.append(row(account, "cash", round_cents(-balance), []))
+        elif account.type == "stocks":
+            # Split the way the allocation does: positions are market
+            # exposure, the uninvested balance is not. One account, two rows,
+            # so the page's groups and the dashboard's slices agree.
+            rows.append(row(account, "stocks", holdings_value, lines))
+            if balance != 0:
+                rows.append(row(account, "cash", balance, []))
+        else:
+            rows.append(row(account, account.type, round_cents(balance + holdings_value), lines))
     return rows
 
 

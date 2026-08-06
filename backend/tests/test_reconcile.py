@@ -58,9 +58,12 @@ def test_credit_balance_is_subtracted_from_cash(db: Session) -> None:
     assert breakdown["cash"] == Decimal("850.00")
 
 
-def test_brokerage_cash_and_holdings_are_added_not_swapped(monkeypatch, db: Session) -> None:
-    """A stocks account's balance is only its uninvested cash; the positions
-    are holdings. Both count, or the account reads short."""
+def test_uninvested_brokerage_cash_counts_as_cash(monkeypatch, db: Session) -> None:
+    """Idle cash in a brokerage is not exposed to the market. Counting it as
+    stocks would overstate that exposure, so it counts as cash while the
+    account's positions count as stocks."""
+    cash = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
+    cash.balance = Decimal("1000.00")
     brokerage = db.scalar(select(Account).where(Account.type == "stocks"))
     brokerage.balance = Decimal("198.55")
     db.add(
@@ -75,10 +78,12 @@ def test_brokerage_cash_and_holdings_are_added_not_swapped(monkeypatch, db: Sess
     )
     db.commit()
 
-    _, breakdown = networth.compute_totals(db)
+    total, breakdown = networth.compute_totals(db)
 
     # No quote is cached in tests, so a holding falls back to its cost basis.
-    assert breakdown["stocks"] == Decimal("698.55")
+    assert breakdown["stocks"] == Decimal("500.00")
+    assert breakdown["cash"] == Decimal("1198.55")
+    assert total == Decimal("1698.55")  # unchanged by where the cash counts
 
 
 # ---------------------------------------------------------------------------
@@ -347,13 +352,15 @@ def test_breakdown_signs_and_holdings(db: Session) -> None:
     )
     db.commit()
 
-    rows = {r["name"]: r for r in networth.accounts_breakdown(db)}
+    rows = networth.accounts_breakdown(db)
+    by_key = {(r["name"], r["asset_class"]): r for r in rows}
 
-    # A card holds what is owed, so it counts against net worth.
-    assert rows["Card"]["value"] == Decimal("-123.63")
-    # A brokerage is its uninvested cash plus its positions, not one or other.
-    assert rows["Brokerage"]["value"] == Decimal("698.55")
-    assert [h["ticker"] for h in rows["Brokerage"]["holdings"]] == ["STLA"]
+    # A card holds what is owed, so it counts against net worth — under cash.
+    assert by_key[("Card", "cash")]["value"] == Decimal("-123.63")
+    # A brokerage splits: positions are market exposure, idle cash is not.
+    assert by_key[("Brokerage", "stocks")]["value"] == Decimal("500.00")
+    assert [h["ticker"] for h in by_key[("Brokerage", "stocks")]["holdings"]] == ["STLA"]
+    assert by_key[("Brokerage", "cash")]["value"] == Decimal("198.55")
 
 
 def test_breakdown_marks_unconnected_accounts(db: Session) -> None:

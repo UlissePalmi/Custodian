@@ -9,29 +9,27 @@ import { useChartTheme } from '../components/charts/theme'
 import { formatPercent, formatQuantity, formatUSD, roundCents } from '../utils/money'
 
 /** Same fixed assignment the dashboard donut uses, so a class keeps its colour
- *  across both views. 'credit' is a liability rather than an asset class and
- *  falls past the end deliberately. */
+ *  across both views. */
 const ASSET_CLASS_ORDER = ['stocks', 'bonds', 'cash']
 
 const GROUP_LABEL: Record<string, string> = {
   cash: 'Cash',
   stocks: 'Stocks',
   bonds: 'Bonds',
-  credit: 'Credit',
 }
 
-/** Display order: assets by size, debts last — they read as a footnote to the
- *  assets rather than a peer of them. */
-function groupOrder(type: string): number {
-  if (type === 'credit') return ASSET_CLASS_ORDER.length + 1
-  const index = ASSET_CLASS_ORDER.indexOf(type)
+function groupOrder(assetClass: string): number {
+  const index = ASSET_CLASS_ORDER.indexOf(assetClass)
   return index >= 0 ? index : ASSET_CLASS_ORDER.length
 }
 
-function groupBy(accounts: AccountBreakdown[]): [string, AccountBreakdown[]][] {
+/** Grouped by `assetClass`, not by account type — a card's debt and a
+ *  brokerage's idle cash both count as cash, so grouping by what holds the
+ *  money would disagree with the dashboard's slices. */
+function groupBy(rows: AccountBreakdown[]): [string, AccountBreakdown[]][] {
   const groups = new Map<string, AccountBreakdown[]>()
-  for (const account of accounts) {
-    groups.set(account.type, [...(groups.get(account.type) ?? []), account])
+  for (const row of rows) {
+    groups.set(row.assetClass, [...(groups.get(row.assetClass) ?? []), row])
   }
   return [...groups.entries()].sort(([a], [b]) => groupOrder(a) - groupOrder(b))
 }
@@ -39,19 +37,18 @@ function groupBy(accounts: AccountBreakdown[]): [string, AccountBreakdown[]][] {
 function AccountRow({ account, color }: { account: AccountBreakdown; color: string }) {
   const foreign = account.currency !== 'usd'
 
-  // Whatever the account is worth beyond its positions — uninvested cash in a
-  // brokerage. Derived from `value` rather than `balance` so it is already in
-  // USD and the rows always reconcile with the account total, which is the
-  // whole point of showing it.
-  const positions = roundCents(account.holdings.reduce((sum, h) => sum + h.marketValue, 0))
-  const uninvested = roundCents(account.value - positions)
-
   return (
     <li className="px-5 py-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
           <span className="truncate font-medium text-terminal-navy">{account.name}</span>
+          {account.type === 'stocks' && account.assetClass === 'cash' && (
+            <span className="shrink-0 text-xs text-slate-400">uninvested</span>
+          )}
+          {account.type === 'credit' && (
+            <span className="shrink-0 text-xs text-slate-400">owed</span>
+          )}
           {!account.isConnected && (
             <span className="shrink-0 text-xs text-slate-400" title="Not linked to a bank — maintained by hand">
               manual
@@ -72,15 +69,6 @@ function AccountRow({ account, color }: { account: AccountBreakdown; color: stri
 
       {account.holdings.length > 0 && (
         <ul className="mt-2 space-y-1 pl-4">
-          {uninvested !== 0 && (
-            <li className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate text-slate-600">
-                <span className="font-medium text-terminal-navy">Cash</span>
-                <span className="ml-2 text-xs text-slate-400">uninvested</span>
-              </span>
-              <span className="shrink-0 tabular-nums text-slate-600">{formatUSD(uninvested)}</span>
-            </li>
-          )}
           {account.holdings.map((holding) => (
             <li key={holding.id} className="flex items-baseline justify-between gap-3 text-sm">
               <span className="truncate text-slate-600">
@@ -118,7 +106,11 @@ export default function AllocationPage() {
       <PageHeader
         eyebrow="Net worth"
         title="Where it sits"
-        subtitle={data ? `${formatUSD(total)} across ${data.length} accounts` : undefined}
+        subtitle={
+          data
+            ? `${formatUSD(total)} across ${new Set(data.map((r) => r.id)).size} accounts`
+            : undefined
+        }
       />
       <PageBody>
         {error ? (
@@ -139,15 +131,15 @@ export default function AllocationPage() {
                 <Card key={type}>
                   <CardHeader
                     title={GROUP_LABEL[type] ?? type}
-                    subtitle={
-                      type === 'credit'
-                        ? `${formatUSD(Math.abs(subtotal))} owed`
-                        : `${formatUSD(subtotal)} total`
-                    }
+                    subtitle={`${formatUSD(subtotal)} total`}
                   />
                   <ul className="divide-y divide-terminal-navy/10">
                     {accounts.map((account) => (
-                      <AccountRow key={account.id} account={account} color={colorFor(type)} />
+                      <AccountRow
+                        key={`${account.id}-${account.assetClass}`}
+                        account={account}
+                        color={colorFor(type)}
+                      />
                     ))}
                   </ul>
                 </Card>

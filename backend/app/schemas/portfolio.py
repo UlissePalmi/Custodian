@@ -89,12 +89,17 @@ class AccountHoldingLine(CamelModel):
 class AccountBreakdownOut(CamelModel):
     id: int
     name: str
+    #: The account's own kind: cash, stocks, bonds, credit.
     type: str
+    #: Where this row counts in the allocation, which is not always `type`:
+    #: a card's debt and a brokerage's uninvested cash both count as cash.
+    #: A brokerage with idle cash therefore yields two rows, one per class.
+    asset_class: str
     currency: str
     #: In the account's own currency; `value` is the USD figure net worth uses.
     balance: Money
-    #: What this contributes to net worth: negative for a credit account,
-    #: and cash plus positions for a brokerage.
+    #: What this row contributes to net worth under `asset_class`: negative
+    #: for a credit account, positions only for a brokerage's stocks row.
     value: Money
     percent: Percent
     #: False for accounts Plaid cannot see, which are maintained by hand.
