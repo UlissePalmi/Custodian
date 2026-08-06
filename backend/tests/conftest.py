@@ -31,6 +31,7 @@ TABLES = (
     "holdings",
     "price_quotes",
     "net_worth_snapshots",
+    "balance_checkpoints",
     "plaid_category_map",
     "plaid_items",
     "accounts",

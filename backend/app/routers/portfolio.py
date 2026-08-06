@@ -15,6 +15,7 @@ from app.errors import ApiError
 from app.models import Account, Holding
 from app.money import round_cents
 from app.schemas.portfolio import (
+    AccountBreakdownOut,
     AccountCreate,
     AccountInput,
     AccountOut,
@@ -106,6 +107,13 @@ def delete_holding(holding_id: int, db: Session = Depends(get_db)) -> Response:
 @router.get("/accounts", response_model=list[AccountOut])
 def list_accounts(db: Session = Depends(get_db)):
     return list(db.scalars(select(Account).order_by(Account.id)))
+
+
+@router.get("/accounts/breakdown", response_model=list[AccountBreakdownOut])
+def accounts_breakdown(db: Session = Depends(get_db)):
+    """Where net worth actually sits: every account, its USD value and share,
+    and the positions it holds."""
+    return networth.accounts_breakdown(db)
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=201)

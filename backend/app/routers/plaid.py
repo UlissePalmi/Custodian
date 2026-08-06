@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.imports import ImportResult
-from app.schemas.plaid import ExchangeTokenRequest, LinkTokenResponse, PlaidConnection
+from app.schemas.plaid import (
+    BalanceDriftOut,
+    ExchangeTokenRequest,
+    LinkTokenResponse,
+    PlaidConnection,
+)
 from app.services import plaid_investments, plaid_link, plaid_sync, reconcile
 
 router = APIRouter(prefix="/api/plaid", tags=["plaid"])
@@ -26,10 +31,11 @@ def sync_now(db: Session = Depends(get_db)):
     # what the account holds now, so there is nothing incremental to return.
     plaid_investments.sync_all_holdings(db)
     reconcile.refresh_balances(db)
+    reconcile.checkpoint(db)
     return results
 
 
-@router.get("/reconciliation")
+@router.get("/reconciliation", response_model=list[BalanceDriftOut])
 def reconciliation(db: Session = Depends(get_db)):
     """Mapped accounts whose ledger balance disagrees with the bank's."""
     return reconcile.drifts(db)

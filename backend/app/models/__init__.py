@@ -5,6 +5,7 @@ Imported as a package so Alembic's autogenerate sees every table on
 """
 
 from app.models.account import Account
+from app.models.balance_checkpoint import BalanceCheckpoint
 from app.models.category import Category
 from app.models.holding import Holding
 from app.models.import_batch import ImportBatch
@@ -16,6 +17,7 @@ from app.models.transaction import Transaction
 
 __all__ = [
     "Account",
+    "BalanceCheckpoint",
     "Category",
     "Holding",
     "ImportBatch",

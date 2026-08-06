@@ -18,6 +18,7 @@ import {
   type MonthLedger,
   type NetWorthPoint,
   type NetWorthSummary,
+  type AccountBreakdown,
   type PlaidConnection,
   type StockModel,
   type StockModelInput,
@@ -268,6 +269,65 @@ export function readYearlyTable(year: number): YearlyTable {
   totals.net = roundCents(totals.totalIncome - totals.totalExpenses)
 
   return { year, columns, rows, totals }
+}
+
+/** The mock's stand-in for the real per-account breakdown. It fabricates the
+ *  same account shape the backend maps to — a connected brokerage and cash
+ *  account, plus an unconnected one — so the page can be developed offline. */
+export function readAccountsBreakdown(): AccountBreakdown[] {
+  const holdings = readHoldings()
+  const stocks = roundCents(holdings.reduce((sum, h) => sum + h.marketValue, 0))
+  const total = readNetWorth().total
+  const share = (value: number) => (total === 0 ? 0 : roundCents((value / total) * 100))
+  const asOf = new Date().toISOString()
+
+  return [
+    {
+      id: 1,
+      name: 'Checking',
+      type: 'cash',
+      currency: 'usd',
+      balance: roundCents(state.cashBalance),
+      value: roundCents(state.cashBalance),
+      percent: share(state.cashBalance),
+      isConnected: true,
+      balanceAsOf: asOf,
+      holdings: [],
+    },
+    {
+      id: 2,
+      name: 'Brokerage',
+      type: 'stocks',
+      currency: 'usd',
+      balance: 0,
+      value: stocks,
+      percent: share(stocks),
+      isConnected: true,
+      balanceAsOf: asOf,
+      holdings: holdings.map((h) => ({
+        id: Number(h.id.replace(/\D/g, '')) || 0,
+        ticker: h.ticker,
+        name: h.name,
+        quantity: h.quantity,
+        currentPrice: h.currentPrice,
+        marketValue: h.marketValue,
+        quoteAsOf: h.quoteAsOf,
+        source: 'plaid' as const,
+      })),
+    },
+    {
+      id: 3,
+      name: 'Bonds',
+      type: 'bonds',
+      currency: 'usd',
+      balance: roundCents(state.bondsBalance),
+      value: roundCents(state.bondsBalance),
+      percent: share(state.bondsBalance),
+      isConnected: false,
+      balanceAsOf: null,
+      holdings: [],
+    },
+  ]
 }
 
 export function readHoldings(): Holding[] {

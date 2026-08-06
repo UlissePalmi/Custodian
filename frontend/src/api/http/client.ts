@@ -10,6 +10,7 @@
 
 import {
   ApiError,
+  type AccountBreakdown,
   type Category,
   type CustodianApi,
   type Holding,
@@ -86,6 +87,8 @@ export const httpApi: CustodianApi = {
     request<void>(`/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   getYearlyTable: (year: number) => request<YearlyTable>(`/yearly-table?year=${year}`),
+
+  getAccountsBreakdown: () => request<AccountBreakdown[]>('/accounts/breakdown'),
 
   getPlaidLinkToken: () => request<LinkTokenResponse>('/plaid/link-token', { method: 'POST' }),
 

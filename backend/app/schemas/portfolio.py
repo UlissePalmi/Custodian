@@ -72,6 +72,38 @@ class AccountOut(CamelModel):
     currency: str
 
 
+class AccountHoldingLine(CamelModel):
+    """One position, as shown beneath the account that holds it."""
+
+    id: int
+    ticker: str
+    name: str
+    quantity: Quantity
+    current_price: Money
+    market_value: Money
+    quote_as_of: datetime
+    #: 'plaid' when synced from a linked brokerage, 'manual' otherwise.
+    source: str
+
+
+class AccountBreakdownOut(CamelModel):
+    id: int
+    name: str
+    type: str
+    currency: str
+    #: In the account's own currency; `value` is the USD figure net worth uses.
+    balance: Money
+    #: What this contributes to net worth: negative for a credit account,
+    #: and cash plus positions for a brokerage.
+    value: Money
+    percent: Percent
+    #: False for accounts Plaid cannot see, which are maintained by hand.
+    is_connected: bool
+    #: When the bank last reported; null for unconnected accounts.
+    balance_as_of: datetime | None
+    holdings: list[AccountHoldingLine]
+
+
 class AccountInput(CamelModel):
     name: str | None = None
     type: str | None = None

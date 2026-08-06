@@ -8,6 +8,7 @@
 
 import {
   ApiError,
+  type AccountBreakdown,
   type Category,
   type CustodianApi,
   type Holding,
@@ -30,6 +31,7 @@ import {
   linkPlaidConnection,
   modifyStockModel,
   modifyTransaction,
+  readAccountsBreakdown,
   readCategories,
   readHoldings,
   readMonthLedger,
@@ -136,6 +138,11 @@ export const mockApi: CustodianApi = {
   async getYearlyTable(year: number): Promise<YearlyTable> {
     await delay()
     return readYearlyTable(year)
+  },
+
+  async getAccountsBreakdown(): Promise<AccountBreakdown[]> {
+    await delay()
+    return readAccountsBreakdown()
   },
 
   async getPlaidLinkToken(): Promise<LinkTokenResponse> {

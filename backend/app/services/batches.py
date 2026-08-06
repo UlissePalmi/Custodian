@@ -38,8 +38,7 @@ def delete_batch(db: Session, batch_id: str) -> None:
     db.execute(delete(Transaction).where(Transaction.import_batch_id == batch_id))
     db.flush()
 
-    account = networth.get_cash_account(db)
-    account.balance = round_cents(account.balance - batch.cash_delta)
+    networth.apply_cash_effect(db, -batch.cash_delta)
 
     db.delete(batch)
     db.flush()

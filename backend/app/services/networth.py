@@ -123,6 +123,21 @@ def get_cash_account(db: Session) -> Account:
     return account
 
 
+def apply_cash_effect(db: Session, delta: Decimal) -> None:
+    """Moves the cash account by `delta` — unless the bank owns its balance.
+
+    A mapped account's balance is written from Plaid on every sync (see
+    `services/reconcile.py`), so nudging it here as well would double-count:
+    the transaction is already reflected in the figure the bank reported.
+    Accumulating locally is only correct where Plaid cannot see the account,
+    which is also the only case where nothing else would record the movement.
+    """
+    account = get_cash_account(db)
+    if account.plaid_account_id is not None:
+        return
+    account.balance = round_cents(account.balance + delta)
+
+
 def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
     """Account balances grouped by account type, plus holdings valued at market.
 
@@ -155,6 +170,71 @@ def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
     for asset_class, value in holdings_value_by_type(db).items():
         totals[asset_class] = round_cents(totals.get(asset_class, ZERO) + value)
     return totals
+
+
+def accounts_breakdown(db: Session) -> list[dict]:
+    """Every account, what it is worth in USD, and what it holds.
+
+    Deliberately mirrors `balances_by_asset_class`'s rules rather than
+    inventing its own — a credit account counts negative, and a stocks
+    account is its uninvested cash *plus* its positions — so this page and the
+    dashboard can never disagree about the total.
+
+    Quotes and FX rates are fetched in one batch each: valuing accounts by
+    calling `holdings_value_for_account` in a loop would issue a request per
+    account.
+    """
+    accounts = list(db.scalars(select(Account).order_by(Account.id)))
+    holdings = list(db.scalars(select(Holding)))
+
+    fx_tickers = [_fx_ticker(a.currency) for a in accounts if a.currency != "usd"]
+    quotes = get_quotes(db, [h.ticker for h in holdings] + fx_tickers)
+
+    by_account: dict[int, list[dict]] = {}
+    for holding in holdings:
+        price, as_of = _price_for(holding, quotes)
+        by_account.setdefault(holding.account_id, []).append(
+            {
+                "id": holding.id,
+                "ticker": holding.ticker,
+                "name": holding.name,
+                "quantity": holding.quantity,
+                "current_price": price,
+                "market_value": round_cents(holding.quantity * price),
+                "quote_as_of": as_of,
+                "source": holding.source,
+            }
+        )
+
+    total, _ = compute_totals(db)
+
+    rows = []
+    for account in accounts:
+        balance = account.balance
+        if account.currency != "usd":
+            rate = quotes.get(_fx_ticker(account.currency))
+            balance = round_cents(balance * rate.price) if rate is not None else ZERO
+
+        lines = sorted(by_account.get(account.id, []), key=lambda h: h["ticker"])
+        holdings_value = round_cents(sum((h["market_value"] for h in lines), ZERO))
+        # A credit account holds what is owed, so it counts against net worth.
+        value = round_cents(-balance if account.type == "credit" else balance + holdings_value)
+
+        rows.append(
+            {
+                "id": account.id,
+                "name": account.name,
+                "type": account.type,
+                "currency": account.currency,
+                "balance": account.balance,
+                "value": value,
+                "percent": percent_of(value, total),
+                "is_connected": account.plaid_account_id is not None,
+                "balance_as_of": account.plaid_balance_as_of,
+                "holdings": lines,
+            }
+        )
+    return rows
 
 
 def compute_totals(db: Session) -> tuple[Decimal, dict[str, Decimal]]:

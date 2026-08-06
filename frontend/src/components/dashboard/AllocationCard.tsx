@@ -40,7 +40,7 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
   if (slices.length === 0) {
     return (
       <Card>
-        <CardHeader title="Asset allocation" />
+        <CardHeader title="Asset allocation" titleTo="/allocation" />
         <EmptyState
           title="No assets recorded"
           description="Add holdings or account balances to see your allocation."
@@ -57,7 +57,11 @@ export default function AllocationCard({ allocation, total }: AllocationCardProp
 
   return (
     <Card className="flex flex-col">
-      <CardHeader title="Asset allocation" subtitle={`${formatUSD(total)} total`} />
+      <CardHeader
+        title="Asset allocation"
+        titleTo="/allocation"
+        subtitle={`${formatUSD(total)} total`}
+      />
       <CardBody className="flex flex-1 flex-col">
         <div className="mx-auto h-48 w-full max-w-64">
           <ResponsiveContainer width="100%" height="100%">

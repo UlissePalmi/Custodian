@@ -254,8 +254,7 @@ def _unwind_stored_transaction(db: Session, txn: Transaction) -> str:
             batch.cash_delta = round_cents(batch.cash_delta - effect)
             batch.imported_count = max(0, batch.imported_count - 1)
 
-    account = networth.get_cash_account(db)
-    account.balance = round_cents(account.balance - effect)
+    networth.apply_cash_effect(db, -effect)
 
     db.delete(txn)
     db.flush()
@@ -403,8 +402,7 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     cash_delta = round_cents(cash_delta)
     batch.cash_delta = cash_delta
 
-    account = networth.get_cash_account(db)
-    account.balance = round_cents(account.balance + cash_delta)
+    networth.apply_cash_effect(db, cash_delta)
 
     total = ZERO
     # Unwound months too: removing a stored transfer changed their totals.

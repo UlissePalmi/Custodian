@@ -144,6 +144,40 @@ export interface Holding {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+/** One position, as listed beneath the account holding it. */
+export interface AccountHoldingLine {
+  id: number
+  ticker: string
+  name: string
+  quantity: number
+  currentPrice: number
+  marketValue: number
+  quoteAsOf: string
+  source: 'plaid' | 'manual'
+}
+
+export interface AccountBreakdown {
+  id: number
+  name: string
+  type: AssetClass | 'credit' | (string & {})
+  currency: string
+  /** In the account's own currency; `value` is the USD figure net worth uses. */
+  balance: number
+  /** Contribution to net worth: negative for a credit account, and cash plus
+   *  positions for a brokerage. These sum to the net worth total. */
+  value: number
+  percent: number
+  /** False for accounts Plaid cannot see, which are maintained by hand. */
+  isConnected: boolean
+  /** When the bank last reported; null for unconnected accounts. */
+  balanceAsOf: string | null
+  holdings: AccountHoldingLine[]
+}
+
+// ---------------------------------------------------------------------------
 // Yearly table (derived — never stored)
 // ---------------------------------------------------------------------------
 
@@ -342,6 +376,8 @@ export interface CustodianApi {
   updateTransaction(id: string, input: TransactionInput): Promise<Transaction>
   deleteTransaction(id: string): Promise<void>
   getYearlyTable(year: number): Promise<YearlyTable>
+  /** Every account, its USD value and share, and the positions it holds. */
+  getAccountsBreakdown(): Promise<AccountBreakdown[]>
   /** Server-issued token for `usePlaidLink`'s Link flow. */
   getPlaidLinkToken(): Promise<LinkTokenResponse>
   /**

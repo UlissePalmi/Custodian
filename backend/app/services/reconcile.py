@@ -1,33 +1,34 @@
-"""Comparing the ledger's running balance against what the bank reports.
+"""Taking account balances from the bank, and checking the ledger against them.
 
-Custodian's `Account.balance` moves by every transaction it records, starting
-from whatever it was set to. The bank's balance is the truth. Keeping only the
-first means silent drift; keeping only the second throws away the check —
-because the *gap between them* is the one thing that reveals a transaction
-that was missed, double-counted, or dated wrongly.
+A balance that accumulates locally cannot track the account it names. Every
+transaction's cash effect lands on one account (`networth.get_cash_account`),
+so card spending moves the checking balance; and transfers are deliberately
+excluded as internal, though each one really does leave checking. Custodian
+read $4,023.94 against Chase's $2,729.61 by exactly that route.
 
-So both are stored and neither overwrites the other. This module records what
-the bank says and reports where the two disagree.
+So a mapped account's `balance` is simply what the bank says, refreshed every
+sync, and transactions no longer move it — they exist to categorise spending.
+Accounts Plaid cannot see stay manual and are never touched here.
 
-The exception is a brokerage's uninvested cash: no transaction ever moves it,
-so there is no ledger-side figure to preserve and it is simply taken from the
-bank.
+That removes per-account drift by construction, but not the question worth
+asking: *did Custodian record everything that moved?* See `checkpoint` below,
+which compares how much banked cash actually changed against how much the
+ledger says it should have.
 """
 
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from plaid.model.accounts_get_request import AccountsGetRequest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Account, PlaidItem
+from app.models import Account, BalanceCheckpoint, Category, Holding, PlaidItem, Transaction
 from app.money import ZERO, round_cents
 from app.services.crypto import decrypt_token
 from app.services.plaid_client import get_plaid_client
 
-#: Below this, a difference is rounding or a quote moving, not a missed
-#: transaction. Worth a dollar of slack rather than crying wolf daily.
+#: Below this, a shift is rounding rather than a missed transaction.
 DRIFT_TOLERANCE = Decimal("1.00")
 
 
@@ -72,65 +73,119 @@ def refresh_balances(db: Session) -> int:
             account.plaid_balance = round_cents(Decimal(str(current)))
             account.plaid_balance_as_of = now
             if account.type == "stocks":
-                # Uninvested cash only; the positions are `holdings`. Nothing
-                # in the ledger tracks this, so there is no local figure worth
-                # preserving against it.
+                # Uninvested cash only — the positions are `holdings`, and
+                # `current` counts both, so taking it here would double them.
                 available = balances.get("available")
                 if available is not None:
                     account.balance = round_cents(Decimal(str(available)))
-            elif account.type == "credit":
-                # What is owed is a state the bank reports, not something the
-                # ledger accumulates: card purchases are recorded as spending
-                # and the payment that clears them is excluded as a transfer,
-                # so nothing here would ever add up to a balance.
+            else:
                 account.balance = account.plaid_balance
             updated += 1
     db.commit()
     return updated
 
 
-def drifts(db: Session, tolerance: Decimal = DRIFT_TOLERANCE) -> list[dict]:
-    """Mapped accounts whose ledger balance disagrees with the bank's.
+def _tracked_total(db: Session) -> Decimal:
+    """Money in a form that only moves when something real happens.
 
-    A stocks account is compared whole — uninvested cash plus positions at
-    market — since the bank reports the account's total, not its cash.
+    Connected cash, minus card debt, plus brokerage cash, plus positions **at
+    cost**. Cost rather than market is the point: a price move is not a
+    transaction, and buying a share only converts cash into holdings of equal
+    value, so neither disturbs this figure. Unconnected accounts are excluded —
+    nothing observes them independently, so they cannot corroborate anything.
     """
-    from app.services.networth import holdings_value_for_account
+    from app.services.networth import _fx_ticker
+    from app.services.quotes import get_quotes
 
-    results = []
-    accounts = db.scalars(
-        select(Account).where(Account.plaid_account_id.is_not(None)).order_by(Account.id)
-    )
+    accounts = [
+        a
+        for a in db.scalars(select(Account))
+        if a.plaid_account_id is not None
+    ]
+    fx_tickers = [_fx_ticker(a.currency) for a in accounts if a.currency != "usd"]
+    rates = get_quotes(db, fx_tickers) if fx_tickers else {}
+
+    total = ZERO
     for account in accounts:
-        if account.plaid_balance is None:
-            continue
-        ours = account.balance
-        if account.type == "stocks":
-            ours = round_cents(ours + holdings_value_for_account(db, account.id))
-        difference = round_cents(ours - account.plaid_balance)
-        if abs(difference) <= tolerance:
-            continue
-        results.append(
-            {
-                "account_id": account.id,
-                "name": account.name,
-                "type": account.type,
-                "ledger_balance": ours,
-                "bank_balance": account.plaid_balance,
-                "difference": difference,
-                "as_of": account.plaid_balance_as_of,
-            }
+        balance = account.balance
+        if account.currency != "usd":
+            rate = rates.get(_fx_ticker(account.currency))
+            balance = round_cents(balance * rate.price) if rate is not None else ZERO
+        total += -balance if account.type == "credit" else balance
+
+    account_ids = {a.id for a in accounts}
+    for holding in db.scalars(select(Holding)):
+        if holding.account_id in account_ids:
+            total += holding.quantity * holding.cost_basis_per_share
+    return round_cents(total)
+
+
+def _ledger_net(db: Session) -> Decimal:
+    """Cumulative income minus expenses Custodian has recorded."""
+    rows = db.execute(
+        select(Category.kind, func.sum(Transaction.amount))
+        .join(Category, Category.id == Transaction.category_id)
+        .group_by(Category.kind)
+    ).all()
+    totals = {kind: amount or ZERO for kind, amount in rows}
+    return round_cents(totals.get("income", ZERO) - totals.get("expense", ZERO))
+
+
+def checkpoint(db: Session) -> BalanceCheckpoint:
+    """Records what is held against what was recorded, and returns it."""
+    row = BalanceCheckpoint(tracked_total=_tracked_total(db), ledger_net=_ledger_net(db))
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def drifts(db: Session, tolerance: Decimal = DRIFT_TOLERANCE) -> list[dict]:
+    """Whether the ledger has stopped keeping pace with the money.
+
+    `tracked_total - ledger_net` is a constant offset absorbing everything
+    that predates the ledger; its value is meaningless. A *change* in it is
+    not: money moved without an entry, or an entry exists for money that never
+    moved. Returns a single row when the offset has shifted since the previous
+    checkpoint, empty when it held.
+
+    A realised gain or loss on a sale moves it legitimately — the proceeds
+    differ from the cost that left the books — so an isolated shift after a
+    trade is expected. A persistent one is not.
+    """
+    recent = list(
+        db.scalars(
+            select(BalanceCheckpoint).order_by(BalanceCheckpoint.taken_at.desc()).limit(2)
         )
-    return results
+    )
+    if len(recent) < 2:
+        return []
+
+    latest, previous = recent[0], recent[1]
+    offset_now = round_cents(latest.tracked_total - latest.ledger_net)
+    offset_before = round_cents(previous.tracked_total - previous.ledger_net)
+    shift = round_cents(offset_now - offset_before)
+    if abs(shift) <= tolerance:
+        return []
+
+    return [
+        {
+            "unexplained": shift,
+            "tracked_change": round_cents(latest.tracked_total - previous.tracked_total),
+            "ledger_change": round_cents(latest.ledger_net - previous.ledger_net),
+            "since": previous.taken_at,
+            "as_of": latest.taken_at,
+        }
+    ]
 
 
 def drift_summary(db: Session) -> str | None:
-    """One line per drifting account, for the sync log. None when all agree."""
+    """One line for the sync log. None when the ledger kept pace."""
     rows = drifts(db)
     if not rows:
         return None
-    return "; ".join(
-        f"{r['name']}: ledger {r['ledger_balance']} vs bank {r['bank_balance']} "
-        f"({r['difference']:+})"
-        for r in rows
+    r = rows[0]
+    return (
+        f"{r['unexplained']:+} unexplained since {r['since']:%Y-%m-%d %H:%M} "
+        f"(balances moved {r['tracked_change']:+}, ledger recorded {r['ledger_change']:+})"
     )
