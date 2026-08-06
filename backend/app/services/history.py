@@ -13,8 +13,12 @@ either recorded or recoverable:
 
 So the series is walked backwards from today, which is measured rather than
 derived, and each earlier day removes that day's cash flow and price moves.
-Ending exactly on today's figure is therefore a property of the arithmetic,
-not a coincidence — `backfill` asserts it.
+Ending exactly on today's figure is therefore a property of the arithmetic
+rather than a coincidence, which makes it worth asserting.
+
+Only *finished* days are stored. Today's net worth is still moving, so a row
+for it would claim to be a closing figure while continuing to change; it is
+computed live on read instead — the same rule the monthly snapshots follow.
 
 Where a price is missing (a weekend, or before a source's history begins) the
 last known price carries backwards. That is exact across closed markets and
@@ -161,48 +165,42 @@ def reconstruct(db: Session, start: date = SERIES_START, today: date | None = No
     return series
 
 
-def record_day(db: Session, day: date | None = None) -> DailyNetWorth:
-    """Stores today's net worth as observed, replacing any existing row."""
-    day = day or date.today()
-    total, breakdown = networth.compute_totals(db)
-    row = db.get(DailyNetWorth, day)
-    if row is None:
-        row = DailyNetWorth(day=day)
-        db.add(row)
-    row.total = total
-    row.breakdown = {key: float(value) for key, value in breakdown.items()}
-    db.commit()
-    return row
-
-
 def ensure_days(db: Session, today: date | None = None) -> int:
-    """Fills in any day that has no row yet, and refreshes today's.
+    """Fills in every finished day that has no row yet, up to yesterday.
 
     Serves both the initial backfill and catching up after the Pi was off, so
-    there is only one way a day can come into existence. Returns how many were
-    written.
+    there is only one way a day comes into existence. Today is deliberately
+    excluded — it is not over. Returns how many were written.
+
+    Recording a day shortly after midnight is exact: prices are still the
+    previous close and almost nothing has happened yet, so walking back one
+    day from the live total lands on that day's close.
     """
     today = today or date.today()
-    existing = {row.day for row in db.scalars(select(DailyNetWorth))}
-    missing = [d for d in _days(SERIES_START, today) if d not in existing]
-    if not missing and today in existing:
-        record_day(db, today)  # today moves, so always refresh it
+    last_complete = today - timedelta(days=1)
+    if last_complete < SERIES_START:
         return 0
 
-    series = reconstruct(db, SERIES_START, today)
+    existing = {row.day for row in db.scalars(select(DailyNetWorth))}
+    # Today may have been stored before this rule existed.
+    stale_today = db.get(DailyNetWorth, today)
+    if stale_today is not None:
+        db.delete(stale_today)
+        db.commit()
+
+    missing = [d for d in _days(SERIES_START, last_complete) if d not in existing]
+    if not missing:
+        return 0
+
+    series = {point["day"]: point["total"] for point in reconstruct(db, SERIES_START, today)}
     written = 0
-    for point in series:
-        if point["day"] in existing and point["day"] != today:
+    for day in missing:
+        total = series.get(day)
+        if total is None:
             continue
-        row = db.get(DailyNetWorth, point["day"])
-        if row is None:
-            row = DailyNetWorth(day=point["day"], breakdown={})
-            db.add(row)
-        row.total = point["total"]
+        db.add(DailyNetWorth(day=day, total=total, breakdown={}))
         written += 1
-    # Today's breakdown is known exactly rather than reconstructed.
     db.commit()
-    record_day(db, today)
     return written
 
 
@@ -210,6 +208,26 @@ def _days(start: date, end: date) -> list[date]:
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
 
 
-def read_daily(db: Session) -> list[dict]:
+def read_daily(db: Session, today: date | None = None) -> list[dict]:
+    """Stored closing figures, with today appended live.
+
+    Today is not in the table by design, but a chart that stopped at yesterday
+    would disagree with the headline total sitting above it. So it is computed
+    here and never written.
+    """
+    today = today or date.today()
     rows = db.scalars(select(DailyNetWorth).order_by(DailyNetWorth.day))
-    return [{"day": row.day, "total": row.total, "breakdown": row.breakdown} for row in rows]
+    series = [
+        {"day": row.day, "total": row.total, "breakdown": row.breakdown}
+        for row in rows
+        if row.day < today
+    ]
+    total, breakdown = networth.compute_totals(db)
+    series.append(
+        {
+            "day": today,
+            "total": total,
+            "breakdown": {key: float(value) for key, value in breakdown.items()},
+        }
+    )
+    return series

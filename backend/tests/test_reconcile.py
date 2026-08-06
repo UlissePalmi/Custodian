@@ -456,17 +456,49 @@ def test_buying_a_position_is_not_a_gain(monkeypatch, db: Session) -> None:
     assert by_day[date(2026, 7, 9)] == by_day[date(2026, 7, 10)]
 
 
-def test_ensure_days_fills_gaps_and_repeats_cleanly(monkeypatch, db: Session) -> None:
+def test_ensure_days_stops_at_yesterday(monkeypatch, db: Session) -> None:
+    """Today is still moving, so a stored row would claim to be a closing
+    figure while continuing to change."""
     _no_history(monkeypatch)
-    written = history.ensure_days(db, date(2026, 7, 5))
-    assert written > 0
-
-    rows = {r["day"] for r in history.read_daily(db)}
-    assert rows == set(history._days(history.SERIES_START, date(2026, 7, 5)))
-
-    before = history.read_daily(db)
     history.ensure_days(db, date(2026, 7, 5))
-    assert history.read_daily(db) == before
+
+    stored = {row.day for row in db.scalars(select(DailyNetWorth))}
+
+    assert stored == set(history._days(history.SERIES_START, date(2026, 7, 4)))
+    assert date(2026, 7, 5) not in stored
+
+
+def test_read_daily_appends_today_live(monkeypatch, db: Session) -> None:
+    """The chart must not stop a day short of the headline total above it."""
+    _no_history(monkeypatch)
+    history.ensure_days(db, date(2026, 7, 5))
+
+    series = history.read_daily(db, today=date(2026, 7, 5))
+    total, _ = networth.compute_totals(db)
+
+    assert series[-1]["day"] == date(2026, 7, 5)
+    assert series[-1]["total"] == total
+
+
+def test_ensure_days_repeats_cleanly(monkeypatch, db: Session) -> None:
+    _no_history(monkeypatch)
+    history.ensure_days(db, date(2026, 7, 5))
+    before = {r.day: r.total for r in db.scalars(select(DailyNetWorth))}
+
+    assert history.ensure_days(db, date(2026, 7, 5)) == 0
+    assert {r.day: r.total for r in db.scalars(select(DailyNetWorth))} == before
+
+
+def test_a_stale_today_row_is_removed(monkeypatch, db: Session) -> None:
+    """Rows written before this rule existed must not linger as closing
+    figures for a day that had not finished."""
+    _no_history(monkeypatch)
+    db.add(DailyNetWorth(day=date(2026, 7, 5), total=Decimal("1.00"), breakdown={}))
+    db.commit()
+
+    history.ensure_days(db, date(2026, 7, 5))
+
+    assert db.get(DailyNetWorth, date(2026, 7, 5)) is None
 
 
 def test_change_compares_against_the_same_date_a_month_back(monkeypatch, db: Session) -> None:
