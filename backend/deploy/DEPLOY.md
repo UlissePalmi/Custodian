@@ -177,7 +177,11 @@ sudo systemctl enable --now custodian-plaid-sync.timer
 systemctl list-timers custodian-plaid-sync.timer
 ```
 
-Each run pulls new transactions and refreshes brokerage positions. Runs hourly
+Each run pulls new transactions, refreshes brokerage positions and records
+what each bank says its balance is. A `BALANCE DRIFT` line in the log means a
+mapped account's ledger balance has parted company with the bank's — usually a
+transaction missed or counted twice. `GET /api/plaid/reconciliation` shows the
+same thing. Runs hourly
 and catches up on the next boot if the Pi was offline. Logs:
 `journalctl -u custodian-plaid-sync -f`. Trigger a sync immediately instead of
 waiting for the timer: `sudo systemctl start custodian-plaid-sync.service`.

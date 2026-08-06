@@ -76,6 +76,20 @@ def read_holdings(db: Session) -> list[dict]:
     return result
 
 
+def holdings_value_for_account(db: Session, account_id: int) -> Decimal:
+    """Market value of one account's positions, for reconciling it against the
+    balance the bank reports for the account as a whole."""
+    holdings = list(db.scalars(select(Holding).where(Holding.account_id == account_id)))
+    if not holdings:
+        return ZERO
+    quotes = get_quotes(db, [h.ticker for h in holdings])
+    total = ZERO
+    for holding in holdings:
+        price, _ = _price_for(holding, quotes)
+        total += holding.quantity * price
+    return round_cents(total)
+
+
 def holdings_value_by_type(db: Session) -> dict[str, Decimal]:
     """Market value of all holdings, grouped by their account's asset class.
 
@@ -116,6 +130,13 @@ def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
     holdings — an account's `currency` just becomes another "ticker" (e.g.
     'EURUSD=X'), so this picks up the delayed-refresh/offline-fallback behavior
     quotes already have for free.
+
+    Two account types are not simply summed under their own name. A credit
+    account holds what is *owed*, so it nets against cash rather than counting
+    as an asset — net worth means assets minus debts. And a stocks account's
+    balance is only the uninvested cash sitting in the brokerage; its positions
+    come from `holdings`, so the two are added rather than one replacing the
+    other.
     """
     accounts = list(db.scalars(select(Account)))
     fx_tickers = [_fx_ticker(a.currency) for a in accounts if a.currency != "usd"]
@@ -123,14 +144,13 @@ def balances_by_asset_class(db: Session) -> dict[str, Decimal]:
 
     totals: dict[str, Decimal] = {asset_class: ZERO for asset_class in BASE_ASSET_CLASSES}
     for account in accounts:
-        if account.type == "stocks":
-            # Stocks-type accounts carry no balance of their own — see
-            # models/account.py — their value comes entirely from holdings, below.
-            continue
         balance = account.balance
         if account.currency != "usd":
             rate = fx_rates.get(_fx_ticker(account.currency))
             balance = round_cents(balance * rate.price) if rate is not None else ZERO
+        if account.type == "credit":
+            totals["cash"] = round_cents(totals["cash"] - balance)
+            continue
         totals[account.type] = round_cents(totals.get(account.type, ZERO) + balance)
     for asset_class, value in holdings_value_by_type(db).items():
         totals[asset_class] = round_cents(totals.get(asset_class, ZERO) + value)
