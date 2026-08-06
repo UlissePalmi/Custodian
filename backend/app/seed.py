@@ -1,6 +1,6 @@
 """Seed the database.
 
-Run without arguments for a real, empty ledger: categories, the Chase category
+Run without arguments for a real, empty ledger: categories, the Plaid category
 mapping and zero-balance Cash/Bonds accounts — nothing else. `--demo` adds the
 front end's fixture data, which is only useful for comparing the API against
 the mock.
@@ -20,7 +20,6 @@ from app.database import SessionLocal
 from app.models import (
     Account,
     Category,
-    ChaseCategoryMap,
     Holding,
     NetWorthSnapshot,
     PlaidCategoryMap,
@@ -40,31 +39,9 @@ CATEGORIES = [
     ("cat-other", "Other", "expense", 7),
 ]
 
-# Chase's export categories. Editable through the database as new strings show
-# up in real exports; unmapped ones fall through to "Other" and get flagged.
-CHASE_CATEGORY_MAP = {
-    "Bills & Utilities": "cat-utilities",
-    "Groceries": "cat-groceries",
-    "Food & Drink": "cat-dining",
-    "Travel": "cat-transport",
-    "Gas": "cat-transport",
-    "Automotive": "cat-transport",
-    "Entertainment": "cat-subscriptions",
-    "Shopping": "cat-other",
-    "Health": "cat-other",
-    "Health & Wellness": "cat-other",
-    "Personal": "cat-other",
-    "Education": "cat-other",
-    "Home": "cat-other",
-    "Rent": "cat-rent",
-    "Payroll": "cat-main-income",
-    "ACH_CREDIT": "cat-main-income",
-}
-
 # Plaid's `personal_finance_category.primary` enum. Editable through the
 # database as Plaid adds values; unmapped ones fall through to a fallback
-# income/expense category (see services/plaid_sync.py's `_propose`), same
-# behaviour as an unmapped Chase category.
+# income/expense category (see services/plaid_sync.py's `_propose`).
 PLAID_CATEGORY_MAP = {
     "INCOME": "cat-main-income",
     "TRANSFER_IN": "cat-main-income",
@@ -92,10 +69,6 @@ def seed_base(db: Session) -> None:
         if db.get(Category, category_id) is None:
             db.add(Category(id=category_id, name=name, kind=kind, sort_order=sort_order))
     db.flush()
-
-    for chase_category, category_id in CHASE_CATEGORY_MAP.items():
-        if db.get(ChaseCategoryMap, chase_category) is None:
-            db.add(ChaseCategoryMap(chase_category=chase_category, category_id=category_id))
 
     for plaid_category, category_id in PLAID_CATEGORY_MAP.items():
         if db.get(PlaidCategoryMap, plaid_category) is None:

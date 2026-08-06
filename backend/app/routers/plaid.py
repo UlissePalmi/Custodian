@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.chase import ImportResult
+from app.schemas.imports import ImportResult
 from app.schemas.plaid import ExchangeTokenRequest, LinkTokenResponse, PlaidConnection
 from app.services import plaid_link, plaid_sync
 

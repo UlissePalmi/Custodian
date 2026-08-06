@@ -171,9 +171,9 @@ def create_transaction(
     )
     db.add(transaction)
 
-    # A Chase import applies its own batch-level cash delta and snapshot
-    # (see services/importer.py); a manual entry is the only write that has
-    # to do it for itself, one transaction at a time.
+    # A sync applies its own batch-level cash delta and snapshot (see
+    # services/plaid_sync.py); a manual entry is the only write that has to do
+    # it for itself, one transaction at a time.
     if source == "manual":
         account = networth.get_cash_account(db)
         account.balance = round_cents(account.balance + _cash_effect(category.kind, amount))

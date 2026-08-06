@@ -1,8 +1,6 @@
 """Plaid Link + connection status.
 
-Sync results reuse `ImportResult` from `schemas/chase.py` — a Plaid sync
-produces the exact same shape (batch id, month, count, cash delta, new net
-worth total) as a confirmed Chase import.
+Sync results use `ImportResult` from `schemas/imports.py`.
 """
 
 from datetime import datetime

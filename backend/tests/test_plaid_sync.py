@@ -1,10 +1,9 @@
 """Plaid sync: applies bank transactions straight to the ledger, no confirm step.
 
-Mirrors `test_import_confirm.py`'s conventions. What's worth pinning down here
-is different from the Chase upload path, though: there's no human review, so
-idempotency (re-running a sync must never double-count) and cross-path dedup
-(a Plaid-synced transaction and a manually entered or Chase-uploaded one must
-recognise each other) matter more than category-mapping UX.
+Nothing reviews these before they land, so what matters most is that a sync
+can't double-count: re-running one, a transaction already entered by hand, and
+the two halves of a transfer between linked accounts all have to be
+recognised.
 
 The Plaid SDK boundary (`get_plaid_client`) is monkeypatched with a small fake
 per test — no real network, same approach the rest of the suite takes for
@@ -20,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, ImportBatch, PlaidItem, Transaction
-from app.services import importer, plaid_link, plaid_sync
+from app.services import batches, plaid_link, plaid_sync
 from app.services.crypto import encrypt_token
 
 STARTING_CASH = 10000
@@ -30,9 +29,9 @@ STARTING_CASH = 10000
 def cash_account(client: TestClient, db: Session) -> Account:
     account = db.scalar(select(Account).where(Account.type == "cash"))
     client.put(f"/api/accounts/{account.id}", json={"balance": STARTING_CASH})
-    # The PUT above runs in the client's own session; expire so `db` (used
-    # directly by several tests here, unlike the HTTP-only Chase import
-    # tests) re-reads the balance it just set instead of its stale cache.
+    # The PUT above runs in the client's own session; expire so `db`, which
+    # most tests here use directly, re-reads the balance it just set instead
+    # of serving its stale cache.
     db.expire_all()
     return account
 
@@ -245,31 +244,6 @@ def test_cross_path_dedup_against_manual_entry(
     assert result is None
     assert cash_balance(db) == after_manual
     assert len(list(db.scalars(select(Transaction)).unique())) == 1
-
-
-def test_plaid_sourced_transaction_blocks_a_later_chase_upload(
-    client: TestClient, monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
-) -> None:
-    _patch_sync_client(
-        monkeypatch,
-        [
-            FakeSyncResponse(
-                added=[FakeTxn("p-1", date(2026, 8, 3), "WHOLE FOODS MARKET", 54.32, category="FOOD_AND_DRINK")],
-                next_cursor="cursor-1",
-            )
-        ],
-    )
-    plaid_sync.sync_item(db, plaid_item)
-
-    csv_content = (
-        b"Transaction Date,Description,Category,Amount\n"
-        b"08/03/2026,WHOLE FOODS MARKET,Groceries,-54.32\n"
-    )
-    response = client.post("/api/import/chase", files={"file": ("chase.csv", csv_content, "text/csv")})
-    row = response.json()["transactions"][0]
-
-    assert row["alreadyImported"] is True
-    assert row["include"] is False
 
 
 def test_unmapped_plaid_category_falls_back_to_other(
@@ -576,7 +550,7 @@ def test_unwinding_keeps_the_earlier_batch_reversible(
     assert batch.imported_count == 1
 
     # The corrected delta is what makes the undo land exactly back at the start.
-    importer.delete_batch(db, first.batch_id)
+    batches.delete_batch(db, first.batch_id)
     assert cash_balance(db) == STARTING_CASH
 
 

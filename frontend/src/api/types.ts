@@ -1,10 +1,10 @@
 /**
  * Custodian API contract.
  *
- * These types are the agreement between the front end and the (not yet built)
- * FastAPI backend. Every shape here is expected to have a matching Pydantic
- * schema server-side. Change them deliberately — the mock client in
- * `./mock/client.ts` and the eventual HTTP client must both satisfy them.
+ * These types are the agreement between the front end and the FastAPI
+ * backend. Every shape here has a matching Pydantic schema server-side.
+ * Change them deliberately — the mock client in `./mock/client.ts` and the
+ * HTTP client in `./http/client.ts` must both satisfy them.
  *
  * Conventions:
  *  - Money is a plain `number` of US dollars (not cents). The backend should
@@ -36,6 +36,8 @@ export interface Category {
 // Transactions / monthly ledger
 // ---------------------------------------------------------------------------
 
+/** 'chase_import' is legacy: the file importer it came from has been removed,
+ *  but historical rows may still carry it. */
 export type TransactionSource = 'manual' | 'chase_import' | 'plaid'
 
 export interface Transaction {
@@ -50,7 +52,7 @@ export interface Transaction {
   categoryName: string
   kind: CategoryKind
   source: TransactionSource
-  /** Set when the transaction came from a confirmed Chase import batch. */
+  /** Set when the transaction came from a sync batch. */
   importBatchId?: string
 }
 
@@ -169,36 +171,10 @@ export interface YearlyTable {
 }
 
 // ---------------------------------------------------------------------------
-// Chase import
+// Bank sync (Plaid)
 // ---------------------------------------------------------------------------
 
-export interface ProposedTransaction {
-  /** Client-side id for the preview row; not a persisted transaction id. */
-  id: string
-  date: string
-  amount: number
-  description: string
-  /** Raw category string from the Chase export, kept for context. */
-  chaseCategory: string
-  /** Custodian category the mapper chose. */
-  categoryId: string
-  kind: CategoryKind
-  /** True when the Chase category had no mapping and fell through to "Other". */
-  flaggedForReview: boolean
-  /** True when this transaction is already in the ledger from an earlier import or manual entry. */
-  alreadyImported: boolean
-  /** Unchecked rows are skipped on confirm. */
-  include: boolean
-}
-
-export interface ImportPreview {
-  batchId: string
-  fileName: string
-  /** Month inferred from the parsed transaction dates. */
-  detectedMonthKey: string
-  transactions: ProposedTransaction[]
-}
-
+/** What one sync run did to the ledger. */
 export interface ImportResult {
   batchId: string
   monthKey: string
@@ -211,10 +187,6 @@ export interface ImportResult {
   /** Net worth total after the roll-forward, so the UI can confirm the effect. */
   newNetWorthTotal: number
 }
-
-// ---------------------------------------------------------------------------
-// Plaid bank sync
-// ---------------------------------------------------------------------------
 
 export interface LinkTokenResponse {
   /** Passed straight to `usePlaidLink` — short-lived, fetch fresh per attempt. */
@@ -370,14 +342,6 @@ export interface CustodianApi {
   updateTransaction(id: string, input: TransactionInput): Promise<Transaction>
   deleteTransaction(id: string): Promise<void>
   getYearlyTable(year: number): Promise<YearlyTable>
-  /**
-   * `hintMonthKey` is the month the upload was started from. The backend still
-   * decides `detectedMonthKey` from the parsed rows; the hint only helps when
-   * the file itself is ambiguous.
-   */
-  uploadChaseFile(file: File, hintMonthKey?: string): Promise<ImportPreview>
-  confirmImport(preview: ImportPreview): Promise<ImportResult>
-
   /** Server-issued token for `usePlaidLink`'s Link flow. */
   getPlaidLinkToken(): Promise<LinkTokenResponse>
   /**

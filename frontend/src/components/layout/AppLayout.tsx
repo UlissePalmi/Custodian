@@ -2,20 +2,16 @@ import { Link, Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import ConnectBankButton from '../plaid/ConnectBankButton'
-import { DataVersionProvider, useDataVersion } from '../../context/DataVersion'
+import { DataVersionProvider } from '../../context/DataVersion'
 
 function Shell() {
-  const { invalidate } = useDataVersion()
-
   return (
     <div className="min-h-dvh bg-terminal-cream">
-      <Sidebar onImported={invalidate} />
+      <Sidebar />
 
-      {/* Mobile header — the app name lives here since there is no sidebar.
-          Import is deliberately not repeated here: it is a month-scoped action
-          and both the Months index and each month page carry their own button.
-          Connect Chase isn't month-scoped, so unlike Import it has no other
-          mobile home — it gets a compact icon-only slot here instead. */}
+      {/* Mobile header — the app name lives here since there is no sidebar,
+          alongside a compact bank-connect button. The sidebar is the only
+          other place to reach it, and that is desktop-only. */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-terminal-navy px-4 py-3 lg:hidden">
         <Link to="/" className="font-terminal-serif text-base font-bold text-white">
           Custodian

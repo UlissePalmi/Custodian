@@ -1,6 +1,6 @@
 /**
  * In-memory data store backing the mock API, mirrored to localStorage so edits
- * and imports survive a page refresh.
+ * survive a page refresh.
  *
  * Everything derived (month totals, the yearly table, net worth) is computed
  * from the stored transactions/holdings/balances on read. Nothing aggregate is
@@ -60,18 +60,16 @@ interface StoreState {
   bondsBalance: number
   /** Snapshots strictly before `CURRENT_SNAPSHOT_MONTH`. */
   pastNetWorthHistory: NetWorthPoint[]
-  /** Batch ids already applied, so re-confirming cannot double-count. */
-  appliedImportBatches: string[]
   nextTransactionSeq: number
   stockModels: StockModel[]
   nextStockModelSeq: number
   plaidConnections: PlaidConnection[]
 }
 
-// Bumped to v3 when Plaid connections were added — older snapshots have no
-// `plaidConnections` field, and per the fallback below, an old snapshot just
-// resets to seed data rather than crashing on a missing array.
-const STORAGE_KEY = 'custodian.mock.v3'
+// Bumped whenever the stored shape changes; per the fallback below an older
+// snapshot just resets to seed data rather than half-loading. v4 dropped the
+// file importer's batch bookkeeping and added Plaid connections.
+const STORAGE_KEY = 'custodian.mock.v4'
 
 function initialState(): StoreState {
   return {
@@ -81,7 +79,6 @@ function initialState(): StoreState {
     cashBalance: SEED_CASH_BALANCE,
     bondsBalance: SEED_BONDS_BALANCE,
     pastNetWorthHistory: SEED_NET_WORTH_HISTORY.map((p) => ({ ...p })),
-    appliedImportBatches: [],
     nextTransactionSeq: SEED_TRANSACTIONS.length + 1,
     stockModels: SEED_STOCK_MODELS.map((s) => ({ ...s, periods: s.periods.map((p) => ({ ...p })) })),
     nextStockModelSeq: SEED_STOCK_MODELS.length + 1,
@@ -387,34 +384,6 @@ export function removeTransaction(id: string): void {
   persist()
 }
 
-/**
- * Applies a confirmed import batch's cash movement to net worth.
- *
- * This is the behaviour the real backend owns: the cash delta (income −
- * expenses of the batch) is added to the cash account balance, which rolls
- * forward into the month's net worth snapshot. Guarded by batch id so
- * re-confirming the same batch cannot double-count.
- *
- * Returns the new net worth total.
- */
-export function applyCashDelta(batchId: string, cashDelta: number): number {
-  if (!state.appliedImportBatches.includes(batchId)) {
-    state.cashBalance = roundCents(state.cashBalance + cashDelta)
-    state.appliedImportBatches.push(batchId)
-    persist()
-  }
-  return readNetWorth().total
-}
-
-export function hasAppliedBatch(batchId: string): boolean {
-  return state.appliedImportBatches.includes(batchId)
-}
-
-export function categoryIdsByKind(kind: Category['kind']): string[] {
-  return readCategories()
-    .filter((c) => c.kind === kind)
-    .map((c) => c.id)
-}
 
 // ---------------------------------------------------------------------------
 // Plaid bank sync

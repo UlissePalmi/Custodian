@@ -24,9 +24,6 @@ export const SEED_CATEGORIES: Category[] = [
   { id: 'cat-other', name: 'Other', kind: 'expense', sortOrder: 7 },
 ]
 
-/** Category every unmapped import row falls through to. */
-export const FALLBACK_EXPENSE_CATEGORY_ID = 'cat-other'
-
 type SeedTransaction = Omit<Transaction, 'categoryName' | 'kind'>
 
 const seedTransactions: SeedTransaction[] = [
@@ -273,19 +270,6 @@ export const SEED_NET_WORTH_HISTORY: NetWorthPoint[] = [
  * in a configurable table; anything missing falls through to "Other" and is
  * flagged for review in the import preview.
  */
-export const CHASE_CATEGORY_MAP: Record<string, string> = {
-  'Bills & Utilities': 'cat-utilities',
-  Groceries: 'cat-groceries',
-  'Food & Drink': 'cat-dining',
-  Travel: 'cat-transport',
-  Gas: 'cat-transport',
-  Automotive: 'cat-transport',
-  Entertainment: 'cat-subscriptions',
-  Shopping: 'cat-other',
-  Health: 'cat-other',
-  Rent: 'cat-rent',
-}
-
 // ---------------------------------------------------------------------------
 // Stock models (3-statement + DCF)
 // ---------------------------------------------------------------------------

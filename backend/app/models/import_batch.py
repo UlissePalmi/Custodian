@@ -11,14 +11,15 @@ PLAID = "plaid"
 
 
 class ImportBatch(Base):
-    """A confirmed import — from a Chase upload or a Plaid sync.
+    """A batch of transactions written by one sync run.
 
-    The batch id is the primary key, which is what makes confirming idempotent:
-    a second confirm of the same batch collides on insert and can never
-    double-count. `cash_delta` is stored so deleting the batch can reverse the
-    exact amount that was applied. A Plaid sync writes this same table (see
-    `services/plaid_sync.py`) so `services/importer.delete_batch` reverses
-    either source without any Plaid-specific undo path.
+    The batch id is the primary key, so the same batch can never be written
+    twice. `cash_delta` is stored rather than recomputed, so
+    `services/batches.delete_batch` reverses the exact amount that was applied
+    even if the ledger has moved on since.
+
+    'chase_import' remains a valid source for rows created by the removed file
+    importer.
     """
 
     __tablename__ = "import_batches"

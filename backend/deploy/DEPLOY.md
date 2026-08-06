@@ -34,7 +34,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env          # then edit DATABASE_URL if you changed the password
 .venv/bin/alembic upgrade head
-.venv/bin/python -m app.seed  # categories, Chase mapping, empty Cash/Bonds/Brokerage accounts
+.venv/bin/python -m app.seed  # categories, Plaid category mapping, empty Cash/Bonds/Brokerage accounts
 ```
 
 Add `--demo` to the seed command to load the front end's fixture data instead of
@@ -63,12 +63,11 @@ systemctl status custodian custodian-frontend
 
 Logs: `journalctl -u custodian -f` (or `-u custodian-frontend`).
 
-## 5. Plaid bank sync (optional)
+## 5. Plaid bank sync
 
-Automatically pulls Chase transactions on a schedule instead of uploading a
-PDF/CSV by hand — an alternative front door into the same ledger, not a
-replacement for it. Skip this section entirely if you don't want it; the app
-runs fine without any of the following configured.
+Pulls transactions from your banks on a schedule and posts them straight to
+the ledger — this is how transactions get in. The app still runs without it
+configured; you just enter everything by hand.
 
 ### 5a. HTTPS via `tailscale serve`
 
@@ -162,8 +161,11 @@ cd ~/Documents/Custodian/backend
 sudo systemctl restart custodian
 ```
 
-Then open the app, click **Connect Chase** in the sidebar, and complete
-Plaid Link.
+Then open the app, click **Connect a bank** (sidebar on desktop, the bank icon
+in the header on mobile), and complete Plaid Link. Link every card you use:
+purchases on an unlinked card are invisible, and a payment to it then counts as
+spending, whereas a payment between two linked accounts is recognised as a
+transfer and excluded from the ledger.
 
 ### 5c. The sync timer
 
@@ -181,7 +183,7 @@ waiting for the timer: `sudo systemctl start custodian-plaid-sync.service`.
 
 Unlinking a connection (`DELETE /api/plaid/items/{itemId}`, or "Disconnect" in
 the sidebar) stops future syncs but leaves past transactions in the ledger —
-that's a separate action, same as a Chase import:
+that's a separate action:
 
 ```bash
 curl -X DELETE localhost:8000/api/import/batches/<batchId>   # reverses one sync's transactions
@@ -216,7 +218,7 @@ curl -X POST localhost:8000/api/holdings -H 'Content-Type: application/json' \
 curl localhost:8000/api/holdings
 ```
 
-Undoing a Chase import (reverses its transactions and its cash movement):
+Undoing a sync batch (reverses its transactions and its cash movement):
 
 ```bash
 curl -X DELETE localhost:8000/api/import/batches/<batchId>

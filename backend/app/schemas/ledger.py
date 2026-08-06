@@ -8,7 +8,7 @@ from pydantic import Field, field_validator
 from app.schemas.base import CamelModel, Money
 
 CategoryKind = Literal["income", "expense"]
-TransactionSource = Literal["manual", "chase_import"]
+TransactionSource = Literal["manual", "chase_import", "plaid"]
 
 
 # --------------------------------------------------------------------------

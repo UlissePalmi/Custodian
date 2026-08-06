@@ -7,7 +7,7 @@
  * backend or database running.
  */
 
-import type { CustodianApi, ImportPreview, StockModelInput, StockPeriod, TransactionInput } from './types'
+import type { CustodianApi, StockModelInput, StockPeriod, TransactionInput } from './types'
 import { mockApi } from './mock/client'
 import { httpApi } from './http/client'
 
@@ -25,10 +25,6 @@ export const createTransaction = (monthKey: string, input: TransactionInput) =>
 export const updateTransaction = (id: string, input: TransactionInput) =>
   api.updateTransaction(id, input)
 export const deleteTransaction = (id: string) => api.deleteTransaction(id)
-
-export const uploadChaseFile = (file: File, hintMonthKey?: string) =>
-  api.uploadChaseFile(file, hintMonthKey)
-export const confirmImport = (preview: ImportPreview) => api.confirmImport(preview)
 
 export const getPlaidLinkToken = () => api.getPlaidLinkToken()
 export const exchangePlaidToken = (publicToken: string, institutionId?: string, institutionName?: string) =>

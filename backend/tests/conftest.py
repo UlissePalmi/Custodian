@@ -31,7 +31,6 @@ TABLES = (
     "holdings",
     "price_quotes",
     "net_worth_snapshots",
-    "chase_category_map",
     "plaid_category_map",
     "plaid_items",
     "accounts",
@@ -73,22 +72,3 @@ def client() -> Iterator[TestClient]:
         yield test_client
     fastapi_app.dependency_overrides.clear()
 
-
-@pytest.fixture
-def credit_card_csv() -> bytes:
-    return (FIXTURES / "chase_credit_2026-08.csv").read_bytes()
-
-
-@pytest.fixture
-def checking_csv() -> bytes:
-    return (FIXTURES / "chase_checking_2026-09.csv").read_bytes()
-
-
-@pytest.fixture
-def credit_card_xlsx() -> bytes:
-    return (FIXTURES / "chase_credit_2026-08.xlsx").read_bytes()
-
-
-@pytest.fixture
-def spending_report_pdf() -> bytes:
-    return (FIXTURES / "chase_spending_report_2026.pdf").read_bytes()

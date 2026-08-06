@@ -1,17 +1,14 @@
-import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { useDataVersion } from '../context/DataVersion'
-import { getMonth, type ImportResult } from '../api'
+import { getMonth } from '../api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ErrorState, Skeleton } from '../components/ui/States'
-import { Amount } from '../components/ui/Amount'
 import { PageBody, PageHeader } from '../components/ui/PageHeader'
 import MonthSummary from '../components/months/MonthSummary'
 import TransactionList from '../components/months/TransactionList'
-import UploadButton from '../components/import/UploadButton'
 import {
   formatMonthLong,
   isWithinLedgerRange,
@@ -48,7 +45,6 @@ function MonthNavLink({ monthKey, direction }: { monthKey: string | null; direct
 export default function MonthDetailPage() {
   const { monthKey = '' } = useParams()
   const { invalidate } = useDataVersion()
-  const [importNotice, setImportNotice] = useState<ImportResult | null>(null)
 
   const valid = isWithinLedgerRange(monthKey)
   const { year, month } = valid ? parseMonthKey(monthKey) : { year: 0, month: 0 }
@@ -82,11 +78,6 @@ export default function MonthDetailPage() {
     invalidate()
   }
 
-  function handleImported(result: ImportResult) {
-    setImportNotice(result)
-    handleChanged()
-  }
-
   return (
     <>
       <PageHeader
@@ -105,22 +96,6 @@ export default function MonthDetailPage() {
         }
       />
       <PageBody>
-        <div className="flex justify-end">
-          <UploadButton monthKey={monthKey} onImported={handleImported} />
-        </div>
-
-        {importNotice && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm">
-            <p className="text-emerald-900">
-              Imported {importNotice.importedCount} transactions. Cash changed by{' '}
-              <Amount value={importNotice.cashDelta} signed className="font-semibold" /> — net worth is
-              now <Amount value={importNotice.newNetWorthTotal} className="font-semibold" />.
-            </p>
-            <Button variant="ghost" size="sm" onClick={() => setImportNotice(null)}>
-              Dismiss
-            </Button>
-          </div>
-        )}
 
         {error ? (
           <Card>

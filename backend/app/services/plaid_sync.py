@@ -1,11 +1,9 @@
 """Plaid transaction sync — auto-applies new bank transactions to the ledger.
 
-No confirm step: bank-sourced data doesn't carry the OCR/parsing risk the
-Chase upload path's preview guards against, so this posts straight to the
-ledger using the same batch/cash-delta/snapshot mechanics
-`services/importer.confirm_import` uses for a Chase import — including reuse
-of `services/importer.delete_batch` (unchanged) for undo, since a Plaid sync
-writes the same `ImportBatch`/`Transaction` tables.
+Transactions post straight to the ledger with no review step. The batch,
+the transactions, the cash delta they add up to and every touched month's
+snapshot land in one database transaction, so a failure part-way leaves
+nothing behind; `services/batches.delete_batch` reverses the lot.
 """
 
 import secrets
@@ -21,14 +19,18 @@ from sqlalchemy.orm import Session
 from app.models import Category, ImportBatch, PlaidCategoryMap, PlaidItem, Transaction
 from app.money import ZERO, round_cents
 from app.months import is_within_ledger_range, month_key_from_date
-from app.schemas.chase import ImportResult
+from app.schemas.imports import ImportResult
 from app.schemas.ledger import TransactionInput
 from app.services import networth
 from app.services.crypto import decrypt_token
 from app.services.dedup import existing_transaction_counts, natural_key
-from app.services.importer import FALLBACK_EXPENSE_CATEGORY_ID, FALLBACK_INCOME_CATEGORY_ID
 from app.services.ledger import create_transaction
 from app.services.plaid_client import get_plaid_client
+
+#: Where a transaction lands when Plaid's category has no mapping, or has one
+#: whose direction contradicts the amount's sign.
+FALLBACK_EXPENSE_CATEGORY_ID = "cat-other"
+FALLBACK_INCOME_CATEGORY_ID = "cat-main-income"
 
 
 @dataclass
@@ -91,11 +93,11 @@ def _category_lookup(db: Session) -> tuple[dict[str, str], dict[str, str]]:
 def _propose(row: _PlaidRow, mapping: dict[str, str], kinds: dict[str, str]) -> tuple[str, str]:
     """Category id + kind for a Plaid row.
 
-    Plaid's amount sign decides direction — it's authoritative here since
-    there's no human in the loop to catch a mis-signed category the way the
-    Chase preview lets one flag and fix. A mapped category is only trusted
-    when its kind agrees with that sign, mirroring
-    `importer._propose_category`'s "kind must agree" rule.
+    The amount's sign decides direction, and is authoritative: nothing reviews
+    these before they land, so a mapping whose kind contradicts the sign would
+    silently file a refund as spending. A mapped category is therefore only
+    trusted when its kind agrees; otherwise the row falls back to a category
+    of the right direction. The mapping picks the bucket, never the direction.
     """
     kind = "expense" if row.amount > 0 else "income"
     mapped = mapping.get(row.plaid_category) if row.plaid_category else None
@@ -171,8 +173,8 @@ def _unwind_stored_transaction(db: Session, txn: Transaction) -> str:
     """Removes a transaction that turned out to be half of a transfer.
 
     Its batch's `cash_delta` and `imported_count` are corrected as it goes:
-    `importer.delete_batch` reverses a batch using that stored delta, so
-    leaving it describing a transaction that no longer exists would make a
+    `services/batches.delete_batch` reverses a batch using that stored delta,
+    so leaving it describing a transaction that no longer exists would make a
     later undo move the cash balance by the wrong amount.
 
     Returns the month key that needs its snapshot recomputed.

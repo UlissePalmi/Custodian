@@ -6,7 +6,6 @@ import { Card } from '../components/ui/Card'
 import { Amount } from '../components/ui/Amount'
 import { ErrorState, Skeleton } from '../components/ui/States'
 import { PageBody, PageHeader } from '../components/ui/PageHeader'
-import UploadButton from '../components/import/UploadButton'
 import { MONTH_NAMES, parseMonthKey } from '../utils/months'
 
 function MonthTile({ month }: { month: MonthInfo }) {
@@ -33,7 +32,7 @@ function MonthTile({ month }: { month: MonthInfo }) {
 }
 
 export default function MonthsPage() {
-  const { version, invalidate } = useDataVersion()
+  const { version } = useDataVersion()
   const { data, loading, error, refetch } = useApi(getMonths, [version])
 
   const byYear = new Map<number, MonthInfo[]>()
@@ -48,7 +47,6 @@ export default function MonthsPage() {
         eyebrow="Ledger"
         title="Months"
         subtitle="Pick a month to view and edit its ledger."
-        action={<UploadButton onImported={invalidate} />}
       />
       <PageBody>
         {error ? (

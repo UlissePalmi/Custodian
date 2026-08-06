@@ -13,7 +13,6 @@ import {
   type Category,
   type CustodianApi,
   type Holding,
-  type ImportPreview,
   type ImportResult,
   type LinkTokenResponse,
   type MonthInfo,
@@ -87,17 +86,6 @@ export const httpApi: CustodianApi = {
     request<void>(`/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   getYearlyTable: (year: number) => request<YearlyTable>(`/yearly-table?year=${year}`),
-
-  uploadChaseFile: (file: File, hintMonthKey?: string) => {
-    const form = new FormData()
-    form.append('file', file)
-    if (hintMonthKey) form.append('hintMonthKey', hintMonthKey)
-    // No Content-Type header: the browser sets it with the multipart boundary.
-    return request<ImportPreview>('/import/chase', { method: 'POST', body: form })
-  },
-
-  confirmImport: (preview: ImportPreview) =>
-    jsonRequest<ImportResult>('/import/chase/confirm', 'POST', preview),
 
   getPlaidLinkToken: () => request<LinkTokenResponse>('/plaid/link-token', { method: 'POST' }),
 
