@@ -30,8 +30,13 @@ from app.services.plaid_client import get_plaid_client
 
 #: Where a transaction lands when Plaid's category has no mapping, or has one
 #: whose direction contradicts the amount's sign.
+#:
+#: Money arriving by that second route is precisely what a refund looks like —
+#: Plaid tags a travel refund TRAVEL, the amount says money-in, and the
+#: category's direction disagrees. It is not a paycheck, so it must not land
+#: in main income, or that column stops meaning earnings.
 FALLBACK_EXPENSE_CATEGORY_ID = "cat-other"
-FALLBACK_INCOME_CATEGORY_ID = "cat-main-income"
+FALLBACK_INCOME_CATEGORY_ID = "cat-secondary-income"
 
 
 @dataclass

@@ -43,8 +43,11 @@ CATEGORIES = [
 # database as Plaid adds values; unmapped ones fall through to a fallback
 # income/expense category (see services/plaid_sync.py's `_propose`).
 PLAID_CATEGORY_MAP = {
+    # INCOME is the only thing that means earnings; money arriving from
+    # somewhere else is not a paycheck and would otherwise make the main
+    # income column read as more than was earned.
     "INCOME": "cat-main-income",
-    "TRANSFER_IN": "cat-main-income",
+    "TRANSFER_IN": "cat-secondary-income",
     "TRANSFER_OUT": "cat-other",
     "LOAN_PAYMENTS": "cat-other",
     "BANK_FEES": "cat-other",

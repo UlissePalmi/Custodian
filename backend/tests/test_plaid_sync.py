@@ -349,6 +349,56 @@ def test_unmapped_plaid_category_falls_back_to_other(
     assert txn.category_id == "cat-other"
 
 
+def test_a_refund_is_not_main_income(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A refund reaches the income side only because its amount says money-in,
+    while Plaid's own category points at spending. Filing that as a paycheck
+    would make the main income column read as more than was earned."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "UNITED AIRLINES", -500.00, category="TRAVEL"),
+                    FakeTxn("p-2", date(2026, 8, 5), "ACME PAYROLL", -3200.00, category="INCOME"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    plaid_sync.sync_item(db, plaid_item)
+
+    refund = db.scalar(select(Transaction).where(Transaction.plaid_transaction_id == "p-1"))
+    salary = db.scalar(select(Transaction).where(Transaction.plaid_transaction_id == "p-2"))
+    assert refund.category_id == "cat-secondary-income"
+    assert salary.category_id == "cat-main-income"
+    # Both are still income; only which column they land in differs.
+    assert refund.category.kind == "income"
+
+
+def test_an_incoming_transfer_is_not_main_income(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "REAL TIME TRANSFER RECD", -397.41, category="TRANSFER_IN"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    plaid_sync.sync_item(db, plaid_item)
+
+    txn = db.scalar(select(Transaction).where(Transaction.plaid_transaction_id == "p-1"))
+    assert txn.category_id == "cat-secondary-income"
+
+
 def test_income_sign_convention(
     monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
 ) -> None:
