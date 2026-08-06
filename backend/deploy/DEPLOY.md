@@ -70,38 +70,64 @@ PDF/CSV by hand — an alternative front door into the same ledger, not a
 replacement for it. Skip this section entirely if you don't want it; the app
 runs fine without any of the following configured.
 
-### 5a. Tailscale HTTPS
+### 5a. HTTPS via `tailscale serve`
 
 Plaid's OAuth handoff with Chase requires an HTTPS redirect URI, and this app
-is normally reached over plain HTTP. Both services need the cert — once the
-page loads over HTTPS, browsers block calls to a plain-HTTP API as mixed
-content.
+is otherwise reached over plain HTTP. `tailscale serve` terminates TLS on 443
+and reverse-proxies to both services exactly as they already run — no cert
+files to manage, no application or port changes, and Tailscale renews the
+certificate itself.
 
-```bash
-sudo tailscale cert --cert-file /home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.crt \
-                     --key-file  /home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.key \
-                     <pi-name>.<tailnet>.ts.net
+```
+https://<pi-name>.<tailnet>.ts.net/       → Vite     (127.0.0.1:5173)
+https://<pi-name>.<tailnet>.ts.net/api/   → FastAPI  (127.0.0.1:8000)
 ```
 
-Then:
+Routing both halves under one hostname also makes them same-origin, which is
+why nothing here touches CORS: the browser stops applying cross-origin and
+mixed-content rules that would otherwise block an HTTPS page calling an HTTP
+API. The services stay separate processes on their own ports; only the
+browser-facing URL is unified.
 
-* Add to `frontend/.env`:
-  ```
-  TAILSCALE_CERT_FILE=/home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.crt
-  TAILSCALE_KEY_FILE=/home/ulisse/Documents/Custodian/backend/deploy/tls/tailscale.key
-  VITE_API_BASE_URL=https://<pi-name>.<tailnet>.ts.net:8000/api
-  ```
-* Edit `/etc/systemd/system/custodian.service`'s `ExecStart` to add
-  `--ssl-certfile=.../tls/tailscale.crt --ssl-keyfile=.../tls/tailscale.key`
-  (native uvicorn flags).
-* Widen `backend/.env`'s `CORS_ORIGIN_REGEX` to `https?://[^/]+:5173` while
-  both schemes need to work, then back to `https://[^/]+:5173` once done.
-* `sudo systemctl daemon-reload && sudo systemctl restart custodian custodian-frontend`
+First enable **HTTPS Certificates** for the tailnet at
+<https://login.tailscale.com/admin/dns> (free; requires MagicDNS). Without it
+`tailscale serve` hangs trying to obtain a certificate it isn't allowed to
+get. Note that each certified machine name is published permanently to the
+public Certificate Transparency log — the name only, which resolves to a
+non-routable `100.x` address.
 
-Open the app at `https://<pi-name>.<tailnet>.ts.net:5173` and confirm there
-are no mixed-content errors in the browser console. Tailscale certs expire
-roughly every 90 days — re-run the `tailscale cert` command and restart both
-services to renew.
+```bash
+sudo tailscale serve --bg --set-path /api http://127.0.0.1:8000/api
+sudo tailscale serve --bg http://127.0.0.1:5173
+tailscale serve status          # both routes, "tailnet only"
+```
+
+Then point the front end at the proxied API and restart it:
+
+```bash
+nano ~/Documents/Custodian/frontend/.env   # VITE_API_BASE_URL=https://<pi-name>.<tailnet>.ts.net/api
+sudo systemctl restart custodian-frontend
+```
+
+The serve config lives in tailscaled's state and survives reboots — no extra
+systemd unit. To undo it entirely: `tailscale serve reset`.
+
+Use `serve`, never `funnel` — `funnel` publishes to the whole internet, and
+Custodian has no authentication of its own.
+
+Verify:
+
+```bash
+curl -s https://<pi-name>.<tailnet>.ts.net/api/health     # {"status":"ok"}
+```
+
+Then open `https://<pi-name>.<tailnet>.ts.net` in a browser and confirm the
+data loads with no console errors. If hot-reload stops working (websocket
+errors in the console only — the app itself is fine), add
+`server.hmr: { clientPort: 443, protocol: 'wss' }` to `frontend/vite.config.ts`.
+
+After this the app is reachable only from devices on the tailnet; plain-LAN
+access without Tailscale no longer works.
 
 ### 5b. Plaid credentials
 
@@ -113,15 +139,21 @@ Add to `backend/.env`:
 PLAID_CLIENT_ID=...
 PLAID_SECRET=...
 PLAID_ENV=sandbox        # switch to production once you're ready to link the real account
-PLAID_REDIRECT_URI=https://<pi-name>.<tailnet>.ts.net:5173/
+PLAID_REDIRECT_URI=https://<pi-name>.<tailnet>.ts.net/
 PLAID_TOKEN_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 `PLAID_REDIRECT_URI` must exactly match a redirect URI registered in the
-Plaid dashboard. Test against `PLAID_ENV=sandbox` first — Plaid's sandbox
-institutions don't require the real HTTPS/OAuth setup above, so you can
-validate the link → sync → reverse flow before spending a real Production
-Item on it.
+Plaid dashboard. Test against `PLAID_ENV=sandbox` first — Plaid's default
+sandbox institutions don't redirect at all (log in with `user_good` /
+`pass_good`, MFA code `1234`), so you can validate the link → sync → reverse
+flow before spending a real Production Item on it. Plaid also offers *OAuth*
+sandbox institutions, which do exercise the redirect round-trip — worth
+linking one before going to production.
+
+A sandbox access token is not valid in production. Disconnect any sandbox
+connection (`DELETE /api/plaid/items/{itemId}`, or the sidebar's Disconnect)
+before switching `PLAID_ENV`, otherwise its stored item fails on every sync.
 
 ```bash
 cd ~/Documents/Custodian/backend

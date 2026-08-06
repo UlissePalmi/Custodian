@@ -40,6 +40,12 @@ class Transaction(Base):
     #: pending-to-posted transition can shift amount/description slightly and
     #: make the natural-key dedup (see services/dedup.py) unreliable on its own.
     plaid_transaction_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    #: Plaid's category and source account, kept so a transfer already in the
+    #: ledger can still be recognised as one later — the other half of a card
+    #: payment often arrives in a different sync run, from a different linked
+    #: institution. See `_pair_against_ledger` in services/plaid_sync.py.
+    plaid_category: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    plaid_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Eager-loaded because every serialised transaction carries `categoryName`
     # and `kind` — a lazy load here would be an N+1 on every ledger read.

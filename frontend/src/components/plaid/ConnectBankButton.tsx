@@ -14,12 +14,45 @@ import { useDataVersion } from '../../context/DataVersion'
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
-/** Survives Chase's OAuth redirect round trip — Link tokens are single-use
- *  and the page navigates away and back during that flow. */
+/**
+ * Survives the bank's OAuth redirect round trip — Link tokens are single-use
+ * and the page navigates away to the bank and back during that flow.
+ *
+ * localStorage rather than sessionStorage: the bank can return the user in a
+ * *different tab* (routine on mobile), and sessionStorage is per-tab, so the
+ * token would be missing exactly when Link needs it to resume — which strands
+ * the flow on a blank page. Plaid's OAuth guide calls for localStorage or a
+ * cookie for this reason.
+ */
 const LINK_TOKEN_STORAGE_KEY = 'custodian.plaid.linkToken'
 
 function isOAuthRedirectReturn(): boolean {
-  return typeof window !== 'undefined' && window.location.search.includes('oauth_state_id=')
+  if (typeof window === 'undefined') return false
+  return new URLSearchParams(window.location.search).has('oauth_state_id')
+}
+
+function readStoredLinkToken(): string | null {
+  try {
+    return localStorage.getItem(LINK_TOKEN_STORAGE_KEY)
+  } catch {
+    return null // Private-mode or storage-disabled browsers.
+  }
+}
+
+function writeStoredLinkToken(token: string): void {
+  try {
+    localStorage.setItem(LINK_TOKEN_STORAGE_KEY, token)
+  } catch {
+    // Non-fatal: only the OAuth resume depends on it.
+  }
+}
+
+function clearStoredLinkToken(): void {
+  try {
+    localStorage.removeItem(LINK_TOKEN_STORAGE_KEY)
+  } catch {
+    // Ignore.
+  }
 }
 
 interface ConnectBankButtonProps {
@@ -38,8 +71,18 @@ interface ConnectBankButtonProps {
 export default function ConnectBankButton({ className = '', compact = false }: ConnectBankButtonProps) {
   const { invalidate } = useDataVersion()
   const [connections, setConnections] = useState<PlaidConnection[]>([])
-  const [linkToken, setLinkToken] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+
+  // Captured once, synchronously, on the very first render. Link has to be
+  // initialised with the original token *and* the full return URL together;
+  // discovering either one render late leaves Link briefly initialised with
+  // nothing to resume from, which is what strands the flow.
+  const [redirectHref] = useState<string | null>(() =>
+    isOAuthRedirectReturn() ? window.location.href : null,
+  )
+  const [linkToken, setLinkToken] = useState<string | null>(() =>
+    isOAuthRedirectReturn() ? readStoredLinkToken() : null,
+  )
+  const [busy, setBusy] = useState(() => isOAuthRedirectReturn())
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,16 +91,26 @@ export default function ConnectBankButton({ className = '', compact = false }: C
       .catch(() => setConnections([]))
   }, [])
 
-  // Resume an in-flight Link session after Chase's OAuth redirect returns.
+  // Strip oauth_state_id once captured, so a refresh doesn't try to resume a
+  // flow that's already been consumed. `redirectHref` keeps the original URL.
   useEffect(() => {
-    if (!isOAuthRedirectReturn()) return
-    const stored = sessionStorage.getItem(LINK_TOKEN_STORAGE_KEY)
-    if (stored) setLinkToken(stored)
-  }, [])
+    if (redirectHref) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [redirectHref])
+
+  // Came back from the bank but the token is gone (storage cleared, or a
+  // browser that dropped it). Say so instead of sitting on a dead spinner.
+  useEffect(() => {
+    if (redirectHref && !linkToken) {
+      setBusy(false)
+      setError('Could not resume the bank connection. Please try connecting again.')
+    }
+  }, [redirectHref, linkToken])
 
   const onSuccess = useCallback(
     async (publicToken: string, metadata: PlaidLinkOnSuccessMetadata) => {
-      sessionStorage.removeItem(LINK_TOKEN_STORAGE_KEY)
+      clearStoredLinkToken()
       setBusy(true)
       setError(null)
       try {
@@ -78,9 +131,13 @@ export default function ConnectBankButton({ className = '', compact = false }: C
   )
 
   const { open, ready } = usePlaidLink({
-    token: linkToken ?? '',
+    // null until there's a real token — Link stays uninitialised rather than
+    // initialising against an empty string.
+    token: linkToken,
     onSuccess,
-    receivedRedirectUri: isOAuthRedirectReturn() ? window.location.href : undefined,
+    // Only meaningful alongside the token that started the flow; sending it
+    // without one is what produces a dead-end blank page.
+    receivedRedirectUri: redirectHref && linkToken ? redirectHref : undefined,
   })
 
   // Opens as soon as a token is set and Link has initialised with it — covers
@@ -113,7 +170,7 @@ export default function ConnectBankButton({ className = '', compact = false }: C
 
     try {
       const { linkToken: token } = await getPlaidLinkToken()
-      sessionStorage.setItem(LINK_TOKEN_STORAGE_KEY, token)
+      writeStoredLinkToken(token)
       setLinkToken(token)
       // `busy` stays true until the `ready`-triggered `open()` effect fires.
     } catch (err) {
@@ -136,60 +193,60 @@ export default function ConnectBankButton({ className = '', compact = false }: C
     }
   }
 
-  const active = connections.find((c) => c.status !== 'disconnected')
+  // Every linked institution is its own connection, and more can always be
+  // added — a second card's transactions are what let its payments be
+  // recognised as transfers rather than counted as spending.
+  const linked = connections.filter((c) => c.status !== 'disconnected')
+  const anyError = linked.some((c) => c.status === 'error')
 
   if (compact) {
     return (
       <div className={className}>
-        {active ? (
-          <button
-            type="button"
-            onClick={() => void disconnect(active.itemId)}
-            disabled={busy}
-            title={`${active.institutionName} — tap to disconnect`}
-            className="flex items-center justify-center rounded-lg p-2 text-terminal-gold transition-colors hover:bg-terminal-navy-light disabled:opacity-50"
-          >
-            <Landmark className="size-5" aria-hidden />
-            {active.status === 'error' && <span className="sr-only">Sync error</span>}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void startConnect()}
-            disabled={busy}
-            title="Connect Chase"
-            className="flex items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-terminal-navy-light hover:text-white disabled:opacity-50"
-          >
-            {busy ? <Spinner className="size-5" /> : <Landmark className="size-5" aria-hidden />}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => void startConnect()}
+          disabled={busy}
+          title={linked.length ? `${linked.map((c) => c.institutionName).join(', ')} — tap to add another` : 'Connect a bank'}
+          className={`flex items-center justify-center rounded-lg p-2 transition-colors hover:bg-terminal-navy-light disabled:opacity-50 ${
+            anyError ? 'text-rose-400' : linked.length ? 'text-terminal-gold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          {busy ? <Spinner className="size-5" /> : <Landmark className="size-5" aria-hidden />}
+          <span className="sr-only">
+            {linked.length ? `${linked.length} bank(s) connected. Add another.` : 'Connect a bank'}
+          </span>
+        </button>
       </div>
     )
   }
 
   return (
     <div className={className}>
-      {active ? (
-        <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
-          <span className="truncate">
-            {active.institutionName}
-            {active.status === 'error' && <span className="ml-1 text-rose-400">· sync error</span>}
-          </span>
-          <button
-            type="button"
-            onClick={() => void disconnect(active.itemId)}
-            disabled={busy}
-            className="shrink-0 text-slate-500 underline decoration-dotted hover:text-white disabled:opacity-50"
-          >
-            Disconnect
-          </button>
-        </div>
-      ) : (
-        <Button variant="secondary" size="md" className="w-full" disabled={busy} onClick={() => void startConnect()}>
-          {busy ? <Spinner className="size-4" /> : <Landmark className="size-4" aria-hidden />}
-          {busy ? 'Connecting…' : 'Connect Chase'}
-        </Button>
+      {linked.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {linked.map((connection) => (
+            <li key={connection.itemId} className="flex items-center justify-between gap-2 text-xs text-slate-400">
+              <span className="truncate">
+                {connection.institutionName}
+                {connection.status === 'error' && <span className="ml-1 text-rose-400">· sync error</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => void disconnect(connection.itemId)}
+                disabled={busy}
+                className="shrink-0 text-slate-500 underline decoration-dotted hover:text-white disabled:opacity-50"
+              >
+                Disconnect
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
+
+      <Button variant="secondary" size="md" className="w-full" disabled={busy} onClick={() => void startConnect()}>
+        {busy ? <Spinner className="size-4" /> : <Landmark className="size-4" aria-hidden />}
+        {busy ? 'Connecting…' : linked.length ? 'Connect another bank' : 'Connect a bank'}
+      </Button>
       {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
     </div>
   )

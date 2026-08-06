@@ -19,8 +19,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Account, PlaidItem, Transaction
-from app.services import plaid_link, plaid_sync
+from app.models import Account, ImportBatch, PlaidItem, Transaction
+from app.services import importer, plaid_link, plaid_sync
 from app.services.crypto import encrypt_token
 
 STARTING_CASH = 10000
@@ -75,8 +75,10 @@ class FakeTxn:
         *,
         pending: bool = False,
         category: str | None = None,
+        account_id: str = "acct-checking",
     ) -> None:
         self.transaction_id = transaction_id
+        self.account_id = account_id
         self.date = txn_date
         self.name = name
         self.amount = amount
@@ -303,6 +305,279 @@ def test_income_sign_convention(
     assert txn.category.kind == "income"
     assert txn.amount == Decimal("15.00")
     assert cash_balance(db) == STARTING_CASH + Decimal("15.00")
+
+
+def test_matched_transfer_pair_is_dropped(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A card payment seen from both linked accounts is one real event, and
+    counting it twice inflates income and expenses by the same amount while
+    the itemised card purchases are already in the ledger."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    # Real shape, straight from a production sync: the funding
+                    # side is LOAN_PAYMENTS, the card side LOAN_DISBURSEMENTS.
+                    FakeTxn("p-1", date(2026, 8, 3), "Payment to Chase card", 54.14, category="LOAN_PAYMENTS"),
+                    FakeTxn(
+                        "p-2",
+                        date(2026, 8, 3),
+                        "Payment Thank You-Mobile",
+                        -54.14,
+                        category="LOAN_DISBURSEMENTS",
+                        account_id="acct-card",
+                    ),
+                    FakeTxn("p-3", date(2026, 8, 3), "Food Lion", 17.30, category="FOOD_AND_DRINK"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 1
+    assert result.cash_delta == Decimal("-17.30")
+    assert {t.plaid_transaction_id for t in db.scalars(select(Transaction)).unique()} == {"p-3"}
+
+
+def test_unpaired_transfers_are_kept(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """Only *matched* pairs are double entries. A payment to a card that was
+    never linked is the sole record of that spending, and an incoming transfer
+    with no matching outgoing is real money arriving — both must survive."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    # Amex isn't linked, so its purchases are invisible and
+                    # this payment is the only record of that spending.
+                    FakeTxn("p-1", date(2026, 8, 3), "AMERICAN EXPRESS ACH PMT", 41.25, category="LOAN_PAYMENTS"),
+                    FakeTxn("p-2", date(2026, 8, 4), "REAL TIME TRANSFER RECD", -397.41, category="TRANSFER_IN"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 2
+    assert result.cash_delta == Decimal("356.16")  # 397.41 in - 41.25 out
+
+
+def test_equal_amounts_in_the_same_direction_are_not_paired(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """Two like-sized purchases are not a transfer — pairing needs opposite
+    directions, not merely a coincidental amount match."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "Transfer out A", 25.00, category="TRANSFER_OUT"),
+                    FakeTxn("p-2", date(2026, 8, 3), "Transfer out B", 25.00, category="TRANSFER_OUT"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 2
+
+
+def test_non_transfer_categories_are_never_paired(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A refund that happens to match a purchase's amount is not a transfer."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "Coffee", 4.50, category="FOOD_AND_DRINK"),
+                    FakeTxn("p-2", date(2026, 8, 3), "Coffee refund", -4.50, category="FOOD_AND_DRINK"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 2
+
+
+def test_transfer_pair_outside_the_window_is_kept(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 1), "Payment to card", 60.00, category="LOAN_PAYMENTS"),
+                    FakeTxn(
+                        "p-2",
+                        date(2026, 8, 20),
+                        "Payment Thank You",
+                        -60.00,
+                        category="LOAN_DISBURSEMENTS",
+                        account_id="acct-card",
+                    ),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 2
+
+
+def test_offsetting_amounts_within_one_account_are_not_paired(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A transfer moves money *between* accounts. Two offsetting entries on the
+    same account are something else and must not be silently dropped."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "Transfer out", 25.00, category="TRANSFER_OUT"),
+                    FakeTxn("p-2", date(2026, 8, 3), "Transfer reversed", -25.00, category="TRANSFER_IN"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 2
+
+
+def test_transfer_pairs_against_a_transfer_already_in_the_ledger(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """The two halves of a card payment arrive in separate syncs when the card
+    is a different linked institution — and linking one replays its whole
+    history at once, so its credits land well after the payments were stored.
+    The stored half has to be removed retroactively."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "AMEX ACH PMT", 41.25, category="LOAN_PAYMENTS"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+    first = plaid_sync.sync_item(db, plaid_item)
+    assert first.imported_count == 1
+    after_first = cash_balance(db)
+
+    # A second institution (the card) syncs later and brings the other half.
+    second_item = PlaidItem(
+        item_id="item-amex",
+        access_token_encrypted=encrypt_token("access-amex"),
+        institution_name="Amex",
+    )
+    db.add(second_item)
+    db.commit()
+
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn(
+                        "p-2",
+                        date(2026, 8, 4),
+                        "Payment received - thank you",
+                        -41.25,
+                        category="LOAN_DISBURSEMENTS",
+                        account_id="acct-amex",
+                    ),
+                ],
+                next_cursor="cursor-amex-1",
+            )
+        ],
+    )
+    result = plaid_sync.sync_item(db, second_item)
+
+    # Neither half survives, and the cash the stored one moved is given back.
+    assert result is None
+    assert db.scalar(select(Transaction).limit(1)) is None
+    assert cash_balance(db) == after_first + Decimal("41.25") == STARTING_CASH
+
+
+def test_unwinding_keeps_the_earlier_batch_reversible(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """Removing a transaction from an already-stored batch has to correct that
+    batch's cash_delta, or a later `delete_batch` reverses an amount that no
+    longer matches the transactions it deletes."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 3), "AMEX ACH PMT", 41.25, category="LOAN_PAYMENTS"),
+                    FakeTxn("p-2", date(2026, 8, 3), "Food Lion", 17.30, category="FOOD_AND_DRINK"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+    first = plaid_sync.sync_item(db, plaid_item)
+    assert first.cash_delta == Decimal("-58.55")
+
+    second_item = PlaidItem(
+        item_id="item-amex",
+        access_token_encrypted=encrypt_token("access-amex"),
+        institution_name="Amex",
+    )
+    db.add(second_item)
+    db.commit()
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn(
+                        "p-3",
+                        date(2026, 8, 3),
+                        "Payment received",
+                        -41.25,
+                        category="LOAN_DISBURSEMENTS",
+                        account_id="acct-amex",
+                    ),
+                ],
+                next_cursor="cursor-amex-1",
+            )
+        ],
+    )
+    plaid_sync.sync_item(db, second_item)
+
+    batch = db.get(ImportBatch, first.batch_id)
+    assert batch.cash_delta == Decimal("-17.30")  # corrected, was -58.55
+    assert batch.imported_count == 1
+
+    # The corrected delta is what makes the undo land exactly back at the start.
+    importer.delete_batch(db, first.batch_id)
+    assert cash_balance(db) == STARTING_CASH
 
 
 def test_reversal_via_delete_batch(

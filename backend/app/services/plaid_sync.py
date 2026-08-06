@@ -10,11 +10,12 @@ writes the same `ImportBatch`/`Transaction` tables.
 
 import secrets
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from sqlalchemy import select
+from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Session
 
 from app.models import Category, ImportBatch, PlaidCategoryMap, PlaidItem, Transaction
@@ -33,6 +34,7 @@ from app.services.plaid_client import get_plaid_client
 @dataclass
 class _PlaidRow:
     transaction_id: str
+    account_id: str
     date: date
     description: str
     #: Plaid's convention: positive = money leaving the account (expense),
@@ -66,6 +68,7 @@ def _fetch_added(item: PlaidItem) -> tuple[list[_PlaidRow], str]:
             rows.append(
                 _PlaidRow(
                     transaction_id=txn.transaction_id,
+                    account_id=txn.account_id,
                     date=txn.date,
                     description=txn.name,
                     amount=Decimal(str(txn.amount)),
@@ -101,6 +104,147 @@ def _propose(row: _PlaidRow, mapping: dict[str, str], kinds: dict[str, str]) -> 
     return (FALLBACK_EXPENSE_CATEGORY_ID if kind == "expense" else FALLBACK_INCOME_CATEGORY_ID), kind
 
 
+#: Plaid categories that describe money moving rather than being earned or
+#: spent. Only these are eligible to be paired off as internal transfers.
+#: A card payment arrives as LOAN_PAYMENTS on the funding account and
+#: LOAN_DISBURSEMENTS on the card — both halves must be listed here, or the
+#: pair is never recognised.
+_TRANSFER_CATEGORIES = {
+    "TRANSFER_IN",
+    "TRANSFER_OUT",
+    "LOAN_PAYMENTS",
+    "LOAN_DISBURSEMENTS",
+}
+
+#: How far apart the two halves of one transfer may post. A card payment
+#: usually clears the same day, but can straddle a weekend.
+_TRANSFER_WINDOW_DAYS = 3
+
+
+def _drop_internal_transfers(rows: list[_PlaidRow]) -> list[_PlaidRow]:
+    """Removes transfers between two accounts the user has linked.
+
+    When both a checking account and a card are connected, a card payment
+    arrives twice — leaving checking and landing on the card — and counting
+    both inflates income *and* expenses by the same amount while the itemised
+    card purchases are already in the ledger.
+
+    Only *matched pairs* are dropped, which is what makes this correct rather
+    than merely tidy: a payment to a card that isn't linked has no visible
+    purchases behind it, so that payment is the only record of the spending
+    and must stay. Likewise an incoming transfer with no matching outgoing is
+    real money arriving. Both survive here; only the genuine double-entries go.
+
+    A transfer whose other half sits in an account that was never linked (a
+    brokerage, say) cannot be recognised and stays in the ledger.
+    """
+    candidates = [
+        i
+        for i, r in enumerate(rows)
+        if r.plaid_category in _TRANSFER_CATEGORIES and r.amount != 0
+    ]
+    dropped: set[int] = set()
+
+    for i in candidates:
+        if i in dropped:
+            continue
+        for j in candidates:
+            if j <= i or j in dropped:
+                continue
+            a, b = rows[i], rows[j]
+            # Opposite directions, same magnitude, close in time, and — the
+            # part that makes this a transfer rather than a coincidence —
+            # sitting in two different linked accounts.
+            if a.account_id == b.account_id:
+                continue
+            if a.amount != -b.amount:
+                continue
+            if abs((a.date - b.date).days) > _TRANSFER_WINDOW_DAYS:
+                continue
+            dropped.update({i, j})
+            break
+
+    return [r for i, r in enumerate(rows) if i not in dropped]
+
+
+def _unwind_stored_transaction(db: Session, txn: Transaction) -> str:
+    """Removes a transaction that turned out to be half of a transfer.
+
+    Its batch's `cash_delta` and `imported_count` are corrected as it goes:
+    `importer.delete_batch` reverses a batch using that stored delta, so
+    leaving it describing a transaction that no longer exists would make a
+    later undo move the cash balance by the wrong amount.
+
+    Returns the month key that needs its snapshot recomputed.
+    """
+    month_key = month_key_from_date(txn.date)
+    effect = txn.amount if txn.category.kind == "income" else -txn.amount
+
+    if txn.import_batch_id:
+        batch = db.get(ImportBatch, txn.import_batch_id)
+        if batch is not None:
+            batch.cash_delta = round_cents(batch.cash_delta - effect)
+            batch.imported_count = max(0, batch.imported_count - 1)
+
+    account = networth.get_cash_account(db)
+    account.balance = round_cents(account.balance - effect)
+
+    db.delete(txn)
+    db.flush()
+    return month_key
+
+
+def _pair_against_ledger(db: Session, rows: list[_PlaidRow]) -> tuple[list[_PlaidRow], set[str]]:
+    """Drops transfer rows whose other half is already in the ledger.
+
+    `_drop_internal_transfers` only sees one sync's worth of rows, which is
+    enough when both halves live at the same institution (one Plaid item, one
+    fetch). Across institutions they arrive in separate syncs — and linking a
+    new card replays its whole history at once, so its credits land long after
+    the matching payments were stored. Those stored halves are removed here.
+
+    Returns the surviving rows and the months whose snapshots went stale.
+    """
+    kept: list[_PlaidRow] = []
+    touched_months: set[str] = set()
+    consumed: set[int] = set()
+
+    for row in rows:
+        if row.plaid_category not in _TRANSFER_CATEGORIES or row.amount == 0:
+            kept.append(row)
+            continue
+
+        amount = round_cents(abs(row.amount))
+        # Plaid's sign is money-out-positive; the counterpart moved the other
+        # way, so it is stored under the opposite kind.
+        counterpart_kind = "income" if row.amount > 0 else "expense"
+
+        match = db.scalars(
+            select(Transaction)
+            .join(Category, Category.id == Transaction.category_id)
+            .where(
+                Transaction.source == "plaid",
+                Transaction.plaid_category.in_(_TRANSFER_CATEGORIES),
+                Transaction.plaid_account_id != row.account_id,
+                Transaction.amount == amount,
+                Transaction.date >= row.date - timedelta(days=_TRANSFER_WINDOW_DAYS),
+                Transaction.date <= row.date + timedelta(days=_TRANSFER_WINDOW_DAYS),
+                Transaction.id.notin_(consumed) if consumed else sa_true(),
+                Category.kind == counterpart_kind,
+            )
+            .order_by(Transaction.id)
+        ).first()
+
+        if match is None:
+            kept.append(row)
+            continue
+
+        consumed.add(match.id)
+        touched_months.add(_unwind_stored_transaction(db, match))
+
+    return kept, touched_months
+
+
 def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     """Pulls new transactions for one linked item and posts them to the ledger.
 
@@ -122,6 +266,12 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     }
     rows = [r for r in rows if r.transaction_id not in already_synced]
     rows = [r for r in rows if is_within_ledger_range(month_key_from_date(r.date))]
+    # Before categorising: a matched transfer pair must never reach the ledger
+    # as an income/expense entry at all.
+    rows = _drop_internal_transfers(rows)
+    # Then against transfers already stored — the other half may have arrived
+    # in an earlier sync, from a different linked institution.
+    rows, unwound_months = _pair_against_ledger(db, rows)
 
     mapping, kinds = _category_lookup(db)
     remaining_existing = existing_transaction_counts(db, [r.date for r in rows])
@@ -137,6 +287,10 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
         accepted.append((row, category_id, kind))
 
     if not accepted:
+        # Nothing new to add, but unwinding a stored transfer still moved cash
+        # and invalidated that month's snapshot.
+        for month_key in sorted(unwound_months):
+            networth.upsert_snapshot(db, month_key)
         item.cursor = cursor
         item.last_synced_at = datetime.now(timezone.utc)
         item.status = "active"
@@ -169,6 +323,8 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
             source="plaid",
             import_batch_id=batch.batch_id,
             plaid_transaction_id=row.transaction_id,
+            plaid_category=row.plaid_category,
+            plaid_account_id=row.account_id,
             commit=False,
         )
         cash_delta += amount if kind == "income" else -amount
@@ -180,7 +336,8 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     account.balance = round_cents(account.balance + cash_delta)
 
     total = ZERO
-    for month_key in sorted(month_keys):
+    # Unwound months too: removing a stored transfer changed their totals.
+    for month_key in sorted(month_keys | unwound_months):
         total = networth.upsert_snapshot(db, month_key)
 
     item.cursor = cursor
