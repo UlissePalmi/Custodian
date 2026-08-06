@@ -20,6 +20,7 @@ export const getMonths = () => api.getMonths()
 export const getMonth = (year: number, month: number) => api.getMonth(year, month)
 export const getYearlyTable = (year: number) => api.getYearlyTable(year)
 export const getAccountsBreakdown = () => api.getAccountsBreakdown()
+export const getDailyNetWorth = () => api.getDailyNetWorth()
 
 export const createTransaction = (monthKey: string, input: TransactionInput) =>
   api.createTransaction(monthKey, input)

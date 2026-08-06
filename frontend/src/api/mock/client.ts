@@ -9,6 +9,7 @@
 import {
   ApiError,
   type AccountBreakdown,
+  type DailyNetWorth,
   type Category,
   type CustodianApi,
   type Holding,
@@ -32,6 +33,7 @@ import {
   modifyStockModel,
   modifyTransaction,
   readAccountsBreakdown,
+  readDailyNetWorth,
   readCategories,
   readHoldings,
   readMonthLedger,
@@ -143,6 +145,11 @@ export const mockApi: CustodianApi = {
   async getAccountsBreakdown(): Promise<AccountBreakdown[]> {
     await delay()
     return readAccountsBreakdown()
+  },
+
+  async getDailyNetWorth(): Promise<DailyNetWorth[]> {
+    await delay()
+    return readDailyNetWorth()
   },
 
   async getPlaidLinkToken(): Promise<LinkTokenResponse> {

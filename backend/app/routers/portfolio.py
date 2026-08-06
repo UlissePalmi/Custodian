@@ -16,6 +16,7 @@ from app.models import Account, Holding
 from app.money import round_cents
 from app.schemas.portfolio import (
     AccountBreakdownOut,
+    DailyNetWorthOut,
     AccountCreate,
     AccountInput,
     AccountOut,
@@ -23,7 +24,7 @@ from app.schemas.portfolio import (
     HoldingOut,
     NetWorthSummaryOut,
 )
-from app.services import networth
+from app.services import history, networth
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -31,6 +32,17 @@ router = APIRouter(prefix="/api", tags=["portfolio"])
 @router.get("/networth", response_model=NetWorthSummaryOut)
 def get_net_worth(db: Session = Depends(get_db)):
     return networth.read_net_worth(db)
+
+
+@router.get("/networth/daily", response_model=list[DailyNetWorthOut])
+def daily_net_worth(db: Session = Depends(get_db)):
+    """End-of-day net worth, oldest first.
+
+    Any day without a row is reconstructed on the way past, so opening the app
+    after the Pi has been off fills the gap rather than leaving a hole.
+    """
+    history.ensure_days(db)
+    return history.read_daily(db)
 
 
 @router.get("/holdings", response_model=list[HoldingOut])

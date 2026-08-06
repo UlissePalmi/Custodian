@@ -19,6 +19,7 @@ import {
   type NetWorthPoint,
   type NetWorthSummary,
   type AccountBreakdown,
+  type DailyNetWorth,
   type PlaidConnection,
   type StockModel,
   type StockModelInput,
@@ -331,6 +332,23 @@ export function readAccountsBreakdown(): AccountBreakdown[] {
       holdings: [],
     },
   ]
+}
+
+/** A plausible daily series ending on the store's actual total, so the chart
+ *  has something continuous to draw offline. */
+export function readDailyNetWorth(): DailyNetWorth[] {
+  const total = readNetWorth().total
+  const days = 37
+  const out: DailyNetWorth[] = []
+  for (let index = days - 1; index >= 0; index -= 1) {
+    const when = new Date()
+    when.setDate(when.getDate() - index)
+    // A gentle drift back from today, flat at weekends like a real series.
+    const weekend = when.getDay() === 0 || when.getDay() === 6
+    const drift = weekend ? 0 : index * 45
+    out.push({ day: when.toISOString().slice(0, 10), total: roundCents(total - drift) })
+  }
+  return out
 }
 
 export function readHoldings(): Holding[] {

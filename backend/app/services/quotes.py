@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -259,3 +259,70 @@ def _fetch_yfinance(ticker: str) -> tuple[Decimal | None, Decimal | None]:
 
 def held_tickers(db: Session) -> list[str]:
     return sorted({t for t in db.scalars(select(Holding.ticker))})
+
+
+# --------------------------------------------------------------------------
+# Historical prices
+#
+# Only used to reconstruct past net worth (see `services/history.py`), never
+# to value anything now — the live path above is unaffected. Deliberately
+# uncached: a backfill runs rarely, and `price_quotes` holds one row per
+# ticker by design.
+# --------------------------------------------------------------------------
+
+ONVISTA_EOD = "https://api.onvista.de/api/v1/instruments/BOND/{entity}/eod_history?range=Y1"
+
+
+def history_for(ticker: str, start: date, end: date) -> dict[date, Decimal]:
+    """Daily closing prices for one holding, keyed by day.
+
+    Days the market was shut are simply absent; callers carry the last known
+    price forward. Returns `{}` rather than raising when a source has nothing,
+    so one unavailable holding cannot fail an entire reconstruction.
+    """
+    try:
+        if ISIN.match(ticker):
+            return _history_isin(ticker, start, end)
+        return _history_yfinance(ticker, start, end)
+    except Exception:
+        log.warning("no price history for %s", ticker, exc_info=True)
+        return {}
+
+
+def _history_yfinance(ticker: str, start: date, end: date) -> dict[date, Decimal]:
+    import yfinance as yf
+
+    frame = yf.Ticker(ticker).history(start=start.isoformat(), end=(end + timedelta(days=1)).isoformat())
+    if frame is None or len(frame) == 0:
+        return {}
+    return {
+        index.date(): round_cents(Decimal(str(row["Close"])))
+        for index, row in frame.iterrows()
+    }
+
+
+def _history_isin(isin: str, start: date, end: date) -> dict[date, Decimal]:
+    """Bond history from onvista, quoted as percent of face value.
+
+    Matches how such a holding's `quantity` is stored (face value / 100), so
+    price × quantity gives a value the same way the live path does. onvista
+    keeps roughly a month for these, and returns the same window whatever
+    `range` is asked for.
+    """
+    hits = _get_json(ONVISTA_SEARCH + isin).get("list", [])
+    entity = next((h.get("entityValue") for h in hits if h.get("entityValue")), None)
+    if entity is None:
+        return {}
+
+    payload = _get_json(ONVISTA_EOD.format(entity=entity))
+    stamps = payload.get("datetimeLast") or []
+    closes = payload.get("last") or []
+
+    history: dict[date, Decimal] = {}
+    for stamp, close in zip(stamps, closes):
+        day = datetime.fromtimestamp(stamp, timezone.utc).date()
+        if start <= day <= end:
+            price = _positive_number(close)
+            if price is not None:
+                history[day] = price
+    return history

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, Holding, PlaidItem, Transaction
-from app.services import networth, reconcile
+from app.services import history, networth, reconcile
 from app.services.crypto import encrypt_token
 
 
@@ -372,3 +372,98 @@ def test_breakdown_marks_unconnected_accounts(db: Session) -> None:
 
     assert rows[cash.name]["is_connected"] is True
     assert rows["Bonds"]["is_connected"] is False
+
+
+# ---------------------------------------------------------------------------
+# Daily net worth
+# ---------------------------------------------------------------------------
+
+
+def _no_history(monkeypatch):
+    """No price history: every holding holds its cost basis, so the series is
+    driven purely by the ledger and the arithmetic is checkable by hand."""
+    monkeypatch.setattr("app.services.history.history_for", lambda t, s, e: {})
+
+
+def test_series_ends_on_todays_actual_total(monkeypatch, db: Session) -> None:
+    """The walk back starts from a measured figure; landing anywhere else
+    means the arithmetic is wrong, not that the past is uncertain."""
+    _no_history(monkeypatch)
+    cash = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
+    cash.balance = Decimal("1000.00")
+    db.add(
+        Transaction(
+            date=date(2026, 7, 10),
+            amount=Decimal("40.00"),
+            description="Groceries",
+            category_id="cat-groceries",
+            source="plaid",
+        )
+    )
+    db.commit()
+
+    series = history.reconstruct(db, date(2026, 7, 1), date(2026, 7, 12))
+    total, _ = networth.compute_totals(db)
+
+    assert series[-1]["total"] == total
+
+
+def test_a_recorded_expense_moves_only_its_own_day(monkeypatch, db: Session) -> None:
+    _no_history(monkeypatch)
+    cash = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
+    cash.balance = Decimal("1000.00")
+    db.add(
+        Transaction(
+            date=date(2026, 7, 10),
+            amount=Decimal("40.00"),
+            description="Groceries",
+            category_id="cat-groceries",
+            source="plaid",
+        )
+    )
+    db.commit()
+
+    by_day = {p["day"]: p["total"] for p in history.reconstruct(db, date(2026, 7, 8), date(2026, 7, 12))}
+
+    # Before the spend the balance was $40 higher; after, it is today's.
+    assert by_day[date(2026, 7, 9)] - by_day[date(2026, 7, 10)] == Decimal("40.00")
+    assert by_day[date(2026, 7, 10)] == by_day[date(2026, 7, 11)]
+
+
+def test_buying_a_position_is_not_a_gain(monkeypatch, db: Session) -> None:
+    """Cash becoming stock leaves net worth untouched, so a position appearing
+    must not register as a jump — the failure this cost a rewrite to find."""
+    monkeypatch.setattr(
+        "app.services.history.history_for",
+        lambda t, s, e: {date(2026, 7, 9): Decimal("10.00"), date(2026, 7, 10): Decimal("10.00")},
+    )
+    brokerage = db.scalar(select(Account).where(Account.type == "stocks"))
+    db.add(
+        Holding(
+            ticker="NEW",
+            name="Bought midway",
+            quantity=Decimal("100"),
+            cost_basis_per_share=Decimal("10.00"),
+            account_id=brokerage.id,
+            source="plaid",
+            purchase_date=date(2026, 7, 10),
+        )
+    )
+    db.commit()
+
+    by_day = {p["day"]: p["total"] for p in history.reconstruct(db, date(2026, 7, 8), date(2026, 7, 11))}
+
+    assert by_day[date(2026, 7, 9)] == by_day[date(2026, 7, 10)]
+
+
+def test_ensure_days_fills_gaps_and_repeats_cleanly(monkeypatch, db: Session) -> None:
+    _no_history(monkeypatch)
+    written = history.ensure_days(db, date(2026, 7, 5))
+    assert written > 0
+
+    rows = {r["day"] for r in history.read_daily(db)}
+    assert rows == set(history._days(history.SERIES_START, date(2026, 7, 5)))
+
+    before = history.read_daily(db)
+    history.ensure_days(db, date(2026, 7, 5))
+    assert history.read_daily(db) == before

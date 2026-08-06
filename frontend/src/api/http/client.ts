@@ -11,6 +11,7 @@
 import {
   ApiError,
   type AccountBreakdown,
+  type DailyNetWorth,
   type Category,
   type CustodianApi,
   type Holding,
@@ -89,6 +90,8 @@ export const httpApi: CustodianApi = {
   getYearlyTable: (year: number) => request<YearlyTable>(`/yearly-table?year=${year}`),
 
   getAccountsBreakdown: () => request<AccountBreakdown[]>('/accounts/breakdown'),
+
+  getDailyNetWorth: () => request<DailyNetWorth[]>('/networth/daily'),
 
   getPlaidLinkToken: () => request<LinkTokenResponse>('/plaid/link-token', { method: 'POST' }),
 

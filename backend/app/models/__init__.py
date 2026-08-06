@@ -7,6 +7,7 @@ Imported as a package so Alembic's autogenerate sees every table on
 from app.models.account import Account
 from app.models.balance_checkpoint import BalanceCheckpoint
 from app.models.category import Category
+from app.models.daily_net_worth import DailyNetWorth
 from app.models.holding import Holding
 from app.models.import_batch import ImportBatch
 from app.models.plaid_category_map import PlaidCategoryMap
@@ -19,6 +20,7 @@ __all__ = [
     "Account",
     "BalanceCheckpoint",
     "Category",
+    "DailyNetWorth",
     "Holding",
     "ImportBatch",
     "NetWorthSnapshot",

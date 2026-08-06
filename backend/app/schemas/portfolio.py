@@ -72,6 +72,13 @@ class AccountOut(CamelModel):
     currency: str
 
 
+class DailyNetWorthOut(CamelModel):
+    """Net worth at the end of one day."""
+
+    day: date
+    total: Money
+
+
 class AccountHoldingLine(CamelModel):
     """One position, as shown beneath the account that holds it."""
 

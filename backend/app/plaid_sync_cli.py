@@ -11,6 +11,7 @@ import sys
 
 from app.database import SessionLocal
 from app.services.plaid_investments import sync_all_holdings
+from app.services.history import ensure_days
 from app.services.reconcile import checkpoint, drift_summary, refresh_balances
 from app.services.plaid_sync import sync_all_items
 
@@ -21,6 +22,7 @@ def main() -> int:
         holdings = sync_all_holdings(db)
         refresh_balances(db)
         checkpoint(db)
+        ensure_days(db)
         drift = drift_summary(db)
     total_imported = sum(r.imported_count for r in results)
     print(

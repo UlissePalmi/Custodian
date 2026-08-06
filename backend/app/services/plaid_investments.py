@@ -10,9 +10,11 @@ Only positions Plaid can see are touched. Anything held where Plaid has no
 visibility stays `source='manual'` and is left alone — see `models/holding.py`.
 """
 
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,6 +51,37 @@ def _cost_per_share(cost_basis, quantity: Decimal) -> Decimal:
         return ZERO
 
 
+def _first_bought(item: PlaidItem) -> dict[str, date]:
+    """Earliest purchase date per security, from the brokerage's own history.
+
+    Recorded so past net worth can tell when a position was actually held:
+    before it was bought that money was cash, which does not move with the
+    stock's price. Positions acquired before Plaid's window simply have no buy
+    to find, and are treated as held throughout — which is what they were.
+    """
+    try:
+        response = get_plaid_client().investments_transactions_get(
+            InvestmentsTransactionsGetRequest(
+                access_token=decrypt_token(item.access_token_encrypted),
+                start_date=date.today() - timedelta(days=730),
+                end_date=date.today(),
+            )
+        )
+    except Exception:
+        return {}
+
+    earliest: dict[str, date] = {}
+    for txn in response.investment_transactions:
+        if str(getattr(txn, "type", "")).lower() != "buy":
+            continue
+        security_id = getattr(txn, "security_id", None)
+        if security_id is None:
+            continue
+        if security_id not in earliest or txn.date < earliest[security_id]:
+            earliest[security_id] = txn.date
+    return earliest
+
+
 def sync_holdings(db: Session, item: PlaidItem) -> int:
     """Replaces this item's synced positions with what Plaid reports now.
 
@@ -62,6 +95,7 @@ def sync_holdings(db: Session, item: PlaidItem) -> int:
     )
 
     securities = {s.security_id: s for s in response.securities}
+    bought_on = _first_bought(item)
     account = get_brokerage_account(db)
 
     existing = {
@@ -97,6 +131,10 @@ def sync_holdings(db: Session, item: PlaidItem) -> int:
         row.name = (security.name or ticker)[:200]
         row.quantity = quantity
         row.cost_basis_per_share = _cost_per_share(holding.cost_basis, quantity)
+        # Only ever filled in, never overwritten: a hand-entered date is the
+        # better record, and a position bought before Plaid's window has none.
+        if row.purchase_date is None:
+            row.purchase_date = bought_on.get(holding.security_id)
         seen.add(holding.security_id)
 
     # Anything previously synced and no longer reported has been sold.

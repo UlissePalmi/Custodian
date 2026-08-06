@@ -108,6 +108,13 @@ export interface NetWorthPoint {
   total: number
 }
 
+/** Net worth at the end of one day. */
+export interface DailyNetWorth {
+  /** ISO `YYYY-MM-DD`. */
+  day: string
+  total: number
+}
+
 export interface NetWorthChange {
   amount: number
   percent: number
@@ -384,6 +391,9 @@ export interface CustodianApi {
   getYearlyTable(year: number): Promise<YearlyTable>
   /** Every account, its USD value and share, and the positions it holds. */
   getAccountsBreakdown(): Promise<AccountBreakdown[]>
+  /** End-of-day net worth, oldest first. Missing days are reconstructed
+   *  server-side on read, so a gap while the Pi was off fills itself. */
+  getDailyNetWorth(): Promise<DailyNetWorth[]>
   /** Server-issued token for `usePlaidLink`'s Link flow. */
   getPlaidLinkToken(): Promise<LinkTokenResponse>
   /**

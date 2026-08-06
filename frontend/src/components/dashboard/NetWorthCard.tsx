@@ -12,8 +12,7 @@ import { Card } from '../ui/Card'
 import { Skeleton } from '../ui/States'
 import { ChartTooltip } from '../charts/ChartTooltip'
 import { axisProps, useChartTheme } from '../charts/theme'
-import type { NetWorthSummary } from '../../api'
-import { formatMonthLong, formatMonthShort } from '../../utils/months'
+import type { DailyNetWorth, NetWorthSummary } from '../../api'
 import { formatPercentSigned, formatUSD, formatUSDCompact, formatUSDSigned, signColor } from '../../utils/money'
 
 export function NetWorthCardSkeleton() {
@@ -26,16 +25,34 @@ export function NetWorthCardSkeleton() {
   )
 }
 
+/** `2026-07-24` -> `Jul 24`, for the axis. Parsed as parts rather than via
+ *  `new Date(iso)`, which would shift the day in a westward timezone. */
+function dayLabel(iso: string, withYear = false): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  const when = new Date(year, month - 1, day)
+  return when.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(withYear ? { year: 'numeric' } : {}),
+  })
+}
+
 /**
- * Dashboard headline: total net worth, change vs. last month, and the monthly
- * snapshot history. Single series, so no legend — the card title names it.
+ * Dashboard headline: total net worth, change vs. last month, and the daily
+ * history. Single series, so no legend — the card title names it.
  */
-export default function NetWorthCard({ data }: { data: NetWorthSummary }) {
+export default function NetWorthCard({
+  data,
+  daily,
+}: {
+  data: NetWorthSummary
+  daily: DailyNetWorth[]
+}) {
   const theme = useChartTheme()
   const change = data.changeVsPrevMonth
-  const chartData = data.history.map((point) => ({
+  const chartData = daily.map((point) => ({
     ...point,
-    label: formatMonthShort(point.monthKey),
+    label: dayLabel(point.day),
   }))
 
   return (
@@ -85,7 +102,7 @@ export default function NetWorthCard({ data }: { data: NetWorthSummary }) {
                 return (
                   <ChartTooltip
                     theme={theme}
-                    label={formatMonthLong(point.monthKey)}
+                    label={dayLabel(point.day, true)}
                     rows={[
                       {
                         key: 'total',

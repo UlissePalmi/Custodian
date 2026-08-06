@@ -1,6 +1,6 @@
 import { useApi } from '../hooks/useApi'
 import { useDataVersion } from '../context/DataVersion'
-import { getHoldings, getNetWorth } from '../api'
+import { getDailyNetWorth, getHoldings, getNetWorth } from '../api'
 import NetWorthCard, { NetWorthCardSkeleton } from '../components/dashboard/NetWorthCard'
 import AllocationCard, { AllocationCardSkeleton } from '../components/dashboard/AllocationCard'
 import HoldingsCard, { HoldingsCardSkeleton } from '../components/dashboard/HoldingsCard'
@@ -11,6 +11,9 @@ import { PageBody, PageHeader } from '../components/ui/PageHeader'
 export default function DashboardPage() {
   const { version } = useDataVersion()
   const netWorth = useApi(getNetWorth, [version])
+  // Separate call: filling any missed day happens server-side on read, so
+  // this is also what catches the chart up after the Pi has been off.
+  const daily = useApi(getDailyNetWorth, [version])
   const holdings = useApi(getHoldings, [version])
 
   return (
@@ -21,10 +24,10 @@ export default function DashboardPage() {
           <Card>
             <ErrorState error={netWorth.error} onRetry={netWorth.refetch} />
           </Card>
-        ) : netWorth.loading || !netWorth.data ? (
+        ) : netWorth.loading || !netWorth.data || daily.loading || !daily.data ? (
           <NetWorthCardSkeleton />
         ) : (
-          <NetWorthCard data={netWorth.data} />
+          <NetWorthCard data={netWorth.data} daily={daily.data} />
         )}
 
         <div className="grid gap-6 lg:grid-cols-3">
