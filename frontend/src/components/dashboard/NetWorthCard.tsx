@@ -38,8 +38,8 @@ function dayLabel(iso: string, withYear = false): string {
 }
 
 /**
- * Dashboard headline: total net worth, change vs. last month, and the daily
- * history. Single series, so no legend — the card title names it.
+ * Dashboard headline: total net worth, change against the same date a month
+ * back, and the daily history. Single series, so no legend — the card title names it.
  */
 export default function NetWorthCard({
   data,
@@ -49,7 +49,7 @@ export default function NetWorthCard({
   daily: DailyNetWorth[]
 }) {
   const theme = useChartTheme()
-  const change = data.changeVsPrevMonth
+  const change = data.changeVsMonthAgo
   const chartData = daily.map((point) => ({
     ...point,
     label: dayLabel(point.day),
@@ -75,10 +75,10 @@ export default function NetWorthCard({
               <span className="tnum">
                 {formatUSDSigned(change.amount)} ({formatPercentSigned(change.percent)})
               </span>
-              <span className="font-normal text-slate-500">vs last month</span>
+              <span className="font-normal text-slate-500">vs a month ago</span>
             </p>
           ) : (
-            <p className="mt-2 text-sm text-slate-500">No prior month to compare against yet.</p>
+            <p className="mt-2 text-sm text-slate-500">Not enough history to compare yet.</p>
           )}
         </div>
       </div>

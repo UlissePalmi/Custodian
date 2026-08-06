@@ -124,8 +124,9 @@ export interface NetWorthSummary {
   total: number
   /** ISO date of the most recent snapshot. */
   asOf: string
-  /** Null when there is no prior month to compare against. */
-  changeVsPrevMonth: NetWorthChange | null
+  /** Against the same date one month back, not the previous month's close.
+   *  Null until the daily series reaches that far back. */
+  changeVsMonthAgo: NetWorthChange | null
   /** Monthly snapshots, oldest first. */
   history: NetWorthPoint[]
   allocation: AllocationSlice[]

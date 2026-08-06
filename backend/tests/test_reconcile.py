@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Account, Holding, PlaidItem, Transaction
+from app.models import Account, DailyNetWorth, Holding, PlaidItem, Transaction
 from app.services import history, networth, reconcile
 from app.services.crypto import encrypt_token
 
@@ -467,3 +467,37 @@ def test_ensure_days_fills_gaps_and_repeats_cleanly(monkeypatch, db: Session) ->
     before = history.read_daily(db)
     history.ensure_days(db, date(2026, 7, 5))
     assert history.read_daily(db) == before
+
+
+def test_change_compares_against_the_same_date_a_month_back(monkeypatch, db: Session) -> None:
+    """Not the previous month's close: on the 1st that would be a day old and
+    on the 31st a month old, so the figure would mean something different
+    depending on when it was read."""
+    _no_history(monkeypatch)
+    cash = db.scalar(select(Account).where(Account.type == "cash").order_by(Account.id))
+    cash.balance = Decimal("1000.00")
+    db.add(DailyNetWorth(day=date(2026, 7, 6), total=Decimal("900.00"), breakdown={}))
+    db.add(DailyNetWorth(day=date(2026, 7, 31), total=Decimal("500.00"), breakdown={}))
+    db.commit()
+
+    result = networth.read_net_worth(db, today=date(2026, 8, 6))
+
+    # Reads 6 July's 900, not 31 July's 500.
+    assert result["change_vs_month_ago"]["amount"] == Decimal("100.00")
+
+
+def test_change_is_absent_until_the_series_reaches_back(monkeypatch, db: Session) -> None:
+    _no_history(monkeypatch)
+    db.add(DailyNetWorth(day=date(2026, 8, 1), total=Decimal("900.00"), breakdown={}))
+    db.commit()
+
+    result = networth.read_net_worth(db, today=date(2026, 8, 6))
+
+    assert result["change_vs_month_ago"] is None
+
+
+def test_a_short_month_clamps_rather_than_failing(monkeypatch, db: Session) -> None:
+    """31 March has no counterpart in February; it compares against the 28th."""
+    _no_history(monkeypatch)
+    assert networth._one_month_before(date(2027, 3, 31)) == date(2027, 2, 28)
+    assert networth._one_month_before(date(2027, 1, 15)) == date(2026, 12, 15)

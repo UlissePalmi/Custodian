@@ -404,19 +404,21 @@ export function readNetWorth(): NetWorthSummary {
     { monthKey: CURRENT_SNAPSHOT_MONTH, total },
   ].sort((a, b) => compareMonthKeys(a.monthKey, b.monthKey))
 
-  const previous = history.length > 1 ? history[history.length - 2] : null
-  const changeVsPrevMonth =
-    previous && previous.total !== 0
+  // Mirrors the backend: the same date a month back, read off the daily
+  // series rather than the previous month's close.
+  const monthAgo = readDailyNetWorth()[0]
+  const changeVsMonthAgo =
+    monthAgo && monthAgo.total !== 0
       ? {
-          amount: roundCents(total - previous.total),
-          percent: roundCents(((total - previous.total) / previous.total) * 100),
+          amount: roundCents(total - monthAgo.total),
+          percent: roundCents(((total - monthAgo.total) / monthAgo.total) * 100),
         }
       : null
 
   return {
     total,
     asOf: new Date().toISOString().slice(0, 10),
-    changeVsPrevMonth,
+    changeVsMonthAgo,
     history,
     allocation,
   }

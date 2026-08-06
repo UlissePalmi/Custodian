@@ -27,7 +27,8 @@ class NetWorthPointOut(CamelModel):
 class NetWorthSummaryOut(CamelModel):
     total: Money
     as_of: date
-    change_vs_prev_month: NetWorthChangeOut | None = None
+    #: Against the same date one month back, not the previous month's close.
+    change_vs_month_ago: NetWorthChangeOut | None = None
     history: list[NetWorthPointOut]
     allocation: list[AllocationSliceOut]
 

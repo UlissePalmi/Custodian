@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
-from app.models import Account, Holding, NetWorthSnapshot, PriceQuote
+from app.models import Account, DailyNetWorth, Holding, NetWorthSnapshot, PriceQuote
 from app.money import ZERO, percent_of, round_cents
-from app.months import compare_month_keys, current_snapshot_month
+from app.months import compare_month_keys, current_snapshot_month, days_in_month, to_month_key
 from app.services.quotes import get_quotes
 
 #: Asset classes the dashboard always shows, even at zero.
@@ -258,6 +258,35 @@ def compute_totals(db: Session) -> tuple[Decimal, dict[str, Decimal]]:
     return total, breakdown
 
 
+def _one_month_before(day: date) -> date:
+    """The same date a month earlier, clamped where the month is shorter —
+    31 March compares against 28 February, not a date that does not exist."""
+    year = day.year - 1 if day.month == 1 else day.year
+    month = 12 if day.month == 1 else day.month - 1
+    return date(year, month, min(day.day, days_in_month(to_month_key(year, month))))
+
+
+def _change_vs_month_ago(db: Session, total: Decimal, today: date) -> dict | None:
+    """Movement against the same date one month back.
+
+    Read from the daily series rather than the monthly snapshots: comparing
+    against "the previous month's close" answers a different question, and on
+    the 1st of a month it would be a day old while on the 31st it would be a
+    month old. Returns None until the series reaches back that far.
+    """
+    target = _one_month_before(today)
+    row = db.scalars(
+        select(DailyNetWorth)
+        .where(DailyNetWorth.day <= target)
+        .order_by(DailyNetWorth.day.desc())
+        .limit(1)
+    ).first()
+    if row is None or row.total == 0:
+        return None
+    delta = round_cents(total - row.total)
+    return {"amount": delta, "percent": percent_of(delta, row.total)}
+
+
 def read_net_worth(db: Session, today: date | None = None) -> dict:
     today = today or date.today()
     current_month = current_snapshot_month(today)
@@ -287,16 +316,12 @@ def read_net_worth(db: Session, today: date | None = None) -> dict:
     ]
     history.append({"month_key": current_month, "total": total})
 
-    previous = history[-2] if len(history) > 1 else None
-    change = None
-    if previous is not None and previous["total"] != 0:
-        delta = round_cents(total - previous["total"])
-        change = {"amount": delta, "percent": percent_of(delta, previous["total"])}
+    change = _change_vs_month_ago(db, total, today)
 
     return {
         "total": total,
         "as_of": today,
-        "change_vs_prev_month": change,
+        "change_vs_month_ago": change,
         "history": history,
         "allocation": allocation,
     }
