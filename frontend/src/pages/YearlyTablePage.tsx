@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Info } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { useDataVersion } from '../context/DataVersion'
 import { getYearlyTable } from '../api'
@@ -68,17 +67,6 @@ export default function YearlyTablePage() {
         }
       />
       <PageBody>
-        <p className="flex items-start gap-2 rounded-lg bg-white px-3 py-2.5 text-xs text-slate-600 shadow-sm">
-          <Info className="mt-0.5 size-3.5 shrink-0 text-terminal-navy" aria-hidden />
-          <span>
-            This table is read-only. Every figure is computed from the monthly ledgers — edit a{' '}
-            <Link to="/months" className="text-terminal-navy underline underline-offset-2">
-              month page
-            </Link>{' '}
-            and the totals here follow.
-          </span>
-        </p>
-
         {error ? (
           <Card>
             <ErrorState error={error} onRetry={refetch} />
