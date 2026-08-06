@@ -75,10 +75,15 @@ class FakeTxn:
         pending: bool = False,
         category: str | None = None,
         account_id: str = "acct-checking",
+        authorized_date: date | None = None,
     ) -> None:
         self.transaction_id = transaction_id
         self.account_id = account_id
+        #: Plaid's posted date.
         self.date = txn_date
+        #: When the purchase actually happened; absent for anything not
+        #: separately authorised, like a direct deposit.
+        self.authorized_date = authorized_date
         self.name = name
         self.amount = amount
         self.pending = pending
@@ -92,17 +97,40 @@ class FakeSyncResponse:
         self.has_more = has_more
 
 
-class FakePlaidClient:
-    """Returns one canned page per `transactions_sync` call, in order."""
+class FakeInvestmentTxn:
+    def __init__(self, txn_date: date, amount: float) -> None:
+        self.date = txn_date
+        self.amount = amount
 
-    def __init__(self, pages: list[FakeSyncResponse]) -> None:
+
+class FakeInvestmentsTxnResponse:
+    def __init__(self, txns: list[FakeInvestmentTxn]) -> None:
+        self.investment_transactions = txns
+
+
+class FakePlaidClient:
+    """Returns one canned page per `transactions_sync` call, in order.
+
+    `investment_transactions` defaults to empty, which is what an item without
+    investments consent effectively looks like.
+    """
+
+    def __init__(
+        self,
+        pages: list[FakeSyncResponse],
+        investment_transactions: list[FakeInvestmentTxn] | None = None,
+    ) -> None:
         self._pages = list(pages)
+        self._investments = investment_transactions or []
         self.calls = 0
 
     def transactions_sync(self, request):  # noqa: ANN001 - test double
         response = self._pages[min(self.calls, len(self._pages) - 1)]
         self.calls += 1
         return response
+
+    def investments_transactions_get(self, request):  # noqa: ANN001 - test double
+        return FakeInvestmentsTxnResponse(self._investments)
 
 
 class FakeExchangeResponse:
@@ -133,8 +161,12 @@ class FakeLinkClient:
         self.removed.append(request.access_token)
 
 
-def _patch_sync_client(monkeypatch, pages: list[FakeSyncResponse]) -> FakePlaidClient:
-    fake = FakePlaidClient(pages)
+def _patch_sync_client(
+    monkeypatch,
+    pages: list[FakeSyncResponse],
+    investment_transactions: list[FakeInvestmentTxn] | None = None,
+) -> FakePlaidClient:
+    fake = FakePlaidClient(pages, investment_transactions)
     monkeypatch.setattr(plaid_sync, "get_plaid_client", lambda: fake)
     return fake
 
@@ -174,6 +206,59 @@ def test_sync_applies_new_transactions_and_rolls_cash_forward(
     transactions = list(db.scalars(select(Transaction)).unique())
     assert {t.plaid_transaction_id for t in transactions} == {"p-1", "p-2"}
     assert all(t.source == "plaid" for t in transactions)
+
+
+def test_purchase_is_dated_when_it_was_authorized(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A card purchase posts a few days after it happens. Dating it by the
+    posted date drags an end-of-month purchase into the next month's ledger,
+    which is the month the spending did not occur in."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn(
+                        "p-1",
+                        date(2026, 8, 3),  # posted
+                        "RENT",
+                        823.99,
+                        category="RENT_AND_UTILITIES",
+                        authorized_date=date(2026, 7, 30),
+                    )
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    txn = db.scalar(select(Transaction).where(Transaction.plaid_transaction_id == "p-1"))
+    assert txn.date == date(2026, 7, 30)
+    assert result.month_key == "2026-07"
+
+
+def test_falls_back_to_posted_date_when_never_authorized(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """Direct deposits and transfers carry no authorised date — posted is the
+    only date there is."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[FakeTxn("p-1", date(2026, 8, 3), "PAYROLL", -3200.00, category="INCOME")],
+                next_cursor="cursor-1",
+            )
+        ],
+    )
+
+    plaid_sync.sync_item(db, plaid_item)
+
+    txn = db.scalar(select(Transaction).where(Transaction.plaid_transaction_id == "p-1"))
+    assert txn.date == date(2026, 8, 3)
 
 
 def test_sync_is_idempotent_on_rerun(
@@ -315,6 +400,56 @@ def test_matched_transfer_pair_is_dropped(
     assert result.imported_count == 1
     assert result.cash_delta == Decimal("-17.30")
     assert {t.plaid_transaction_id for t in db.scalars(select(Transaction)).unique()} == {"p-3"}
+
+
+def test_transfer_into_a_brokerage_is_not_an_expense(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """Money moved into a brokerage is still yours, sitting in an account whose
+    value Custodian already tracks through holdings. The receiving side is
+    investment activity, so it never appears in the transaction stream and the
+    outgoing half would otherwise look like spending."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[
+                    FakeTxn("p-1", date(2026, 8, 4), "Manual DB-Bkrg", 1000.00, category="TRANSFER_OUT"),
+                    FakeTxn("p-2", date(2026, 8, 4), "Food Lion", 17.30, category="FOOD_AND_DRINK"),
+                ],
+                next_cursor="cursor-1",
+            )
+        ],
+        investment_transactions=[FakeInvestmentTxn(date(2026, 8, 4), 1000.00)],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 1
+    assert result.cash_delta == Decimal("-17.30")
+    assert {t.plaid_transaction_id for t in db.scalars(select(Transaction)).unique()} == {"p-2"}
+
+
+def test_ordinary_spending_is_not_paired_against_a_trade(
+    monkeypatch, db: Session, cash_account: Account, plaid_item: PlaidItem
+) -> None:
+    """A purchase that happens to match a trade's value is not a transfer —
+    only transfer-category rows are eligible to pair."""
+    _patch_sync_client(
+        monkeypatch,
+        [
+            FakeSyncResponse(
+                added=[FakeTxn("p-1", date(2026, 8, 4), "NIKE.COM", 288.80, category="GENERAL_MERCHANDISE")],
+                next_cursor="cursor-1",
+            )
+        ],
+        investment_transactions=[FakeInvestmentTxn(date(2026, 8, 4), 288.80)],
+    )
+
+    result = plaid_sync.sync_item(db, plaid_item)
+
+    assert result.imported_count == 1
+    assert result.cash_delta == Decimal("-288.80")
 
 
 def test_unpaired_transfers_are_kept(

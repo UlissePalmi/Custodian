@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from sqlalchemy import select
 from sqlalchemy import true as sa_true
@@ -67,11 +68,19 @@ def _fetch_added(item: PlaidItem) -> tuple[list[_PlaidRow], str]:
                 if getattr(txn, "personal_finance_category", None)
                 else None
             )
+            # When the money was spent, not when the bank finished moving it.
+            # Plaid's `date` is the posted date, which for card purchases runs
+            # a day or four late and drags an end-of-month purchase into the
+            # next month's ledger. `authorized_date` is the purchase itself;
+            # it is absent on things that were never authorised separately
+            # (direct deposits, transfers), where posted is the only date
+            # there is.
+            txn_date = getattr(txn, "authorized_date", None) or txn.date
             rows.append(
                 _PlaidRow(
                     transaction_id=txn.transaction_id,
                     account_id=txn.account_id,
-                    date=txn.date,
+                    date=txn_date,
                     description=txn.name,
                     amount=Decimal(str(txn.amount)),
                     plaid_category=category,
@@ -137,8 +146,9 @@ def _drop_internal_transfers(rows: list[_PlaidRow]) -> list[_PlaidRow]:
     and must stay. Likewise an incoming transfer with no matching outgoing is
     real money arriving. Both survive here; only the genuine double-entries go.
 
-    A transfer whose other half sits in an account that was never linked (a
-    brokerage, say) cannot be recognised and stays in the ledger.
+    This only sees the transaction stream. Money moved into a brokerage is
+    handled by `_drop_transfers_into_investments`, since the receiving side is
+    investment activity and never appears here.
     """
     candidates = [
         i
@@ -164,6 +174,62 @@ def _drop_internal_transfers(rows: list[_PlaidRow]) -> list[_PlaidRow]:
             if abs((a.date - b.date).days) > _TRANSFER_WINDOW_DAYS:
                 continue
             dropped.update({i, j})
+            break
+
+    return [r for i, r in enumerate(rows) if i not in dropped]
+
+
+def _investment_cash_dates(item: PlaidItem, rows: list[_PlaidRow]) -> list[tuple[date, Decimal]]:
+    """Cash movements inside this item's brokerage, as (date, amount).
+
+    Money moved into a brokerage never appears in `/transactions/sync` from
+    the brokerage's side — investment activity lives behind a different
+    endpoint — so a transfer out of checking looks unmatched and gets counted
+    as spending. It isn't: the money is still yours, now sitting in an account
+    whose value Custodian already tracks through holdings.
+
+    Returns an empty list when the item has no investments consent or no
+    brokerage, which simply leaves such transfers unpaired as before.
+    """
+    if not rows:
+        return []
+    try:
+        response = get_plaid_client().investments_transactions_get(
+            InvestmentsTransactionsGetRequest(
+                access_token=decrypt_token(item.access_token_encrypted),
+                start_date=min(r.date for r in rows) - timedelta(days=_TRANSFER_WINDOW_DAYS),
+                end_date=max(r.date for r in rows) + timedelta(days=_TRANSFER_WINDOW_DAYS),
+            )
+        )
+    except Exception:
+        return []
+    return [(t.date, abs(Decimal(str(t.amount)))) for t in response.investment_transactions]
+
+
+def _drop_transfers_into_investments(item: PlaidItem, rows: list[_PlaidRow]) -> list[_PlaidRow]:
+    """Drops transfers whose other half is investment activity in a brokerage.
+
+    Only transfer-category rows are eligible, so an ordinary purchase that
+    happens to match a trade's value is never mistaken for one. A brokerage at
+    a different institution than the funding account is not covered — the two
+    halves would sit under different items.
+    """
+    candidates = [i for i, r in enumerate(rows) if r.plaid_category in _TRANSFER_CATEGORIES]
+    if not candidates:
+        return rows
+
+    movements = _investment_cash_dates(item, [rows[i] for i in candidates])
+    dropped: set[int] = set()
+    for i in candidates:
+        row = rows[i]
+        amount = round_cents(abs(row.amount))
+        for index, (moved_on, moved) in enumerate(movements):
+            if moved != amount:
+                continue
+            if abs((row.date - moved_on).days) > _TRANSFER_WINDOW_DAYS:
+                continue
+            movements.pop(index)  # One movement can only account for one transfer.
+            dropped.add(i)
             break
 
     return [r for i, r in enumerate(rows) if i not in dropped]
@@ -271,6 +337,9 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     # Before categorising: a matched transfer pair must never reach the ledger
     # as an income/expense entry at all.
     rows = _drop_internal_transfers(rows)
+    # Then against money that moved into the brokerage, which the transaction
+    # stream never shows from the receiving side.
+    rows = _drop_transfers_into_investments(item, rows)
     # Then against transfers already stored — the other half may have arrived
     # in an earlier sync, from a different linked institution.
     rows, unwound_months = _pair_against_ledger(db, rows)
