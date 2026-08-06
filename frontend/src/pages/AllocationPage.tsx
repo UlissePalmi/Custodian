@@ -39,6 +39,13 @@ function groupBy(accounts: AccountBreakdown[]): [string, AccountBreakdown[]][] {
 function AccountRow({ account, color }: { account: AccountBreakdown; color: string }) {
   const foreign = account.currency !== 'usd'
 
+  // Whatever the account is worth beyond its positions — uninvested cash in a
+  // brokerage. Derived from `value` rather than `balance` so it is already in
+  // USD and the rows always reconcile with the account total, which is the
+  // whole point of showing it.
+  const positions = roundCents(account.holdings.reduce((sum, h) => sum + h.marketValue, 0))
+  const uninvested = roundCents(account.value - positions)
+
   return (
     <li className="px-5 py-3">
       <div className="flex items-baseline justify-between gap-3">
@@ -65,6 +72,15 @@ function AccountRow({ account, color }: { account: AccountBreakdown; color: stri
 
       {account.holdings.length > 0 && (
         <ul className="mt-2 space-y-1 pl-4">
+          {uninvested !== 0 && (
+            <li className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="truncate text-slate-600">
+                <span className="font-medium text-terminal-navy">Cash</span>
+                <span className="ml-2 text-xs text-slate-400">uninvested</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-slate-600">{formatUSD(uninvested)}</span>
+            </li>
+          )}
           {account.holdings.map((holding) => (
             <li key={holding.id} className="flex items-baseline justify-between gap-3 text-sm">
               <span className="truncate text-slate-600">
