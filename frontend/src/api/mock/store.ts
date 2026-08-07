@@ -16,7 +16,6 @@ import {
   type Holding,
   type MonthInfo,
   type MonthLedger,
-  type NetWorthPoint,
   type NetWorthSummary,
   type AccountBreakdown,
   type DailyNetWorth,
@@ -30,12 +29,10 @@ import {
   type YearlyTableRow,
 } from '../types'
 import {
-  CURRENT_SNAPSHOT_MONTH,
   SEED_BONDS_BALANCE,
   SEED_CASH_BALANCE,
   SEED_CATEGORIES,
   SEED_HOLDINGS,
-  SEED_NET_WORTH_HISTORY,
   SEED_STOCK_MODELS,
   SEED_TRANSACTIONS,
 } from './seed'
@@ -60,8 +57,6 @@ interface StoreState {
   holdings: StoredHolding[]
   cashBalance: number
   bondsBalance: number
-  /** Snapshots strictly before `CURRENT_SNAPSHOT_MONTH`. */
-  pastNetWorthHistory: NetWorthPoint[]
   nextTransactionSeq: number
   stockModels: StockModel[]
   nextStockModelSeq: number
@@ -80,7 +75,6 @@ function initialState(): StoreState {
     holdings: SEED_HOLDINGS.map((h) => ({ ...h })),
     cashBalance: SEED_CASH_BALANCE,
     bondsBalance: SEED_BONDS_BALANCE,
-    pastNetWorthHistory: SEED_NET_WORTH_HISTORY.map((p) => ({ ...p })),
     nextTransactionSeq: SEED_TRANSACTIONS.length + 1,
     stockModels: SEED_STOCK_MODELS.map((s) => ({ ...s, periods: s.periods.map((p) => ({ ...p })) })),
     nextStockModelSeq: SEED_STOCK_MODELS.length + 1,
@@ -397,12 +391,6 @@ export function readNetWorth(): NetWorthSummary {
     percent: total === 0 ? 0 : roundCents((slice.value / total) * 100),
   }))
 
-  // The current month's snapshot is live, so a confirmed import moves both the
-  // headline total and the last point on the chart.
-  const history: NetWorthPoint[] = [
-    ...state.pastNetWorthHistory,
-    { monthKey: CURRENT_SNAPSHOT_MONTH, total },
-  ].sort((a, b) => compareMonthKeys(a.monthKey, b.monthKey))
 
   // Mirrors the backend: the same date a month back, read off the daily
   // series rather than the previous month's close.
@@ -419,7 +407,6 @@ export function readNetWorth(): NetWorthSummary {
     total,
     asOf: new Date().toISOString().slice(0, 10),
     changeVsMonthAgo,
-    history,
     allocation,
   }
 }

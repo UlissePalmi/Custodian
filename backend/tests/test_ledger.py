@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Account, NetWorthSnapshot
+from app.models import Account
+from app.services import networth
 from app.months import LEDGER_END, LEDGER_START, month_key_range
 
 STARTING_CASH = 10000
@@ -20,14 +21,18 @@ def cash_account(client: TestClient, db: Session) -> Account:
     return account
 
 
+def net_worth_total(db: Session) -> Decimal:
+    """Net worth is computed on read now that monthly snapshots are gone, so
+    this asserts the same thing the dashboard would show."""
+    db.expire_all()
+    total, _ = networth.compute_totals(db)
+    return total
+
+
 def cash_balance(db: Session) -> Decimal:
     db.expire_all()
     return db.scalar(select(Account.balance).where(Account.type == "cash"))
 
-
-def net_worth_total(db: Session, month_key: str) -> Decimal | None:
-    db.expire_all()
-    return db.scalar(select(NetWorthSnapshot.total).where(NetWorthSnapshot.month_key == month_key))
 
 
 def create(client: TestClient, month_key: str, **overrides) -> dict:
@@ -113,7 +118,7 @@ def test_manual_income_moves_cash_and_net_worth(
     roll into cash/net worth the same way a Chase-imported expense does."""
     create(client, "2026-07", amount=500, categoryId="cat-main-income", description="Freelance")
     assert cash_balance(db) == STARTING_CASH + Decimal("500")
-    assert net_worth_total(db, "2026-07") == STARTING_CASH + Decimal("500")
+    assert net_worth_total(db) == STARTING_CASH + Decimal("500")
 
 
 def test_manual_expense_moves_cash_and_net_worth(
@@ -121,7 +126,7 @@ def test_manual_expense_moves_cash_and_net_worth(
 ) -> None:
     create(client, "2026-07", amount=42.50, categoryId="cat-groceries", description="Snacks")
     assert cash_balance(db) == STARTING_CASH - Decimal("42.50")
-    assert net_worth_total(db, "2026-07") == STARTING_CASH - Decimal("42.50")
+    assert net_worth_total(db) == STARTING_CASH - Decimal("42.50")
 
 
 def test_updating_a_transaction_reverses_the_old_cash_effect(
@@ -135,7 +140,7 @@ def test_updating_a_transaction_reverses_the_old_cash_effect(
         json={"date": "2026-07-10", "amount": 30, "description": "Groceries", "categoryId": "cat-groceries"},
     )
     assert cash_balance(db) == STARTING_CASH - Decimal("30")
-    assert net_worth_total(db, "2026-07") == STARTING_CASH - Decimal("30")
+    assert net_worth_total(db) == STARTING_CASH - Decimal("30")
 
 
 def test_updating_a_transactions_category_flips_its_cash_direction(
@@ -152,22 +157,19 @@ def test_updating_a_transactions_category_flips_its_cash_direction(
     assert cash_balance(db) == STARTING_CASH + Decimal("100")
 
 
-def test_updating_a_transactions_month_updates_both_snapshots(
+def test_moving_a_transaction_across_months_keeps_its_cash_effect(
     client: TestClient, cash_account: Account, db: Session
 ) -> None:
+    """The edit reverses the old effect and applies the new one; changing the
+    month must not make it count twice or not at all."""
     created = create(client, "2026-07", amount=100, categoryId="cat-groceries", description="Groceries")
 
     client.put(
         f"/api/transactions/{created['id']}",
         json={"date": "2026-08-05", "amount": 100, "description": "Groceries", "categoryId": "cat-groceries"},
     )
+
     assert cash_balance(db) == STARTING_CASH - Decimal("100")
-    # upsert_snapshot always stamps the current live total (see networth.py) — it
-    # doesn't reconstruct what a past month's own total "should" have been, so
-    # both snapshots end up holding the same post-edit figure. That's the same
-    # behaviour a multi-month Chase import already relies on.
-    assert net_worth_total(db, "2026-07") == STARTING_CASH - Decimal("100")
-    assert net_worth_total(db, "2026-08") == STARTING_CASH - Decimal("100")
 
 
 def test_deleting_a_transaction_reverses_its_cash_effect(
@@ -178,7 +180,7 @@ def test_deleting_a_transaction_reverses_its_cash_effect(
 
     assert client.delete(f"/api/transactions/{created['id']}").status_code == 204
     assert cash_balance(db) == STARTING_CASH
-    assert net_worth_total(db, "2026-07") == STARTING_CASH
+    assert net_worth_total(db) == STARTING_CASH
 
 
 def test_invalid_month_key_is_422(client: TestClient) -> None:

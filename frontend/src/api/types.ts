@@ -103,11 +103,6 @@ export interface AllocationSlice {
   percent: number
 }
 
-export interface NetWorthPoint {
-  monthKey: string
-  total: number
-}
-
 /** Net worth at the end of one day. */
 export interface DailyNetWorth {
   /** ISO `YYYY-MM-DD`. */
@@ -127,8 +122,6 @@ export interface NetWorthSummary {
   /** Against the same date one month back, not the previous month's close.
    *  Null until the daily series reaches that far back. */
   changeVsMonthAgo: NetWorthChange | null
-  /** Monthly snapshots, oldest first. */
-  history: NetWorthPoint[]
   allocation: AllocationSlice[]
 }
 

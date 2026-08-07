@@ -12,8 +12,7 @@ def create_app() -> FastAPI:
     # This service is the API only; the front end runs separately on its own
     # port, so every browser request to it is cross-origin. The regex matches
     # that port on any host, which covers localhost, the Pi's LAN address and a
-    # Tailscale name without keeping a list of them. No cookies or auth headers
-    # are sent, so credentials stay off.
+    # Tailscale name without keeping a list of them.
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=settings.cors_origin_regex,

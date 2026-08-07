@@ -16,9 +16,6 @@ class DailyNetWorth(Base):
     measurement from a reconstruction once written. That is a deliberate
     simplification; the reconstruction is exact wherever prices and the ledger
     are (see `services/history.py`), and only 1–3 July hold a price flat.
-
-    Separate from `net_worth_snapshots`, which stores one row per month and is
-    written by the sync roll-forward for a different purpose.
     """
 
     __tablename__ = "daily_net_worth"

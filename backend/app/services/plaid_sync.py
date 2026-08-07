@@ -1,9 +1,9 @@
 """Plaid transaction sync — auto-applies new bank transactions to the ledger.
 
-Transactions post straight to the ledger with no review step. The batch,
-the transactions, the cash delta they add up to and every touched month's
-snapshot land in one database transaction, so a failure part-way leaves
-nothing behind; `services/batches.delete_batch` reverses the lot.
+Transactions post straight to the ledger with no review step. The batch, the
+transactions and the cash delta they add up to land in one database
+transaction, so a failure part-way leaves nothing behind;
+`services/batches.delete_batch` reverses the lot.
 """
 
 import secrets
@@ -240,17 +240,14 @@ def _drop_transfers_into_investments(item: PlaidItem, rows: list[_PlaidRow]) -> 
     return [r for i, r in enumerate(rows) if i not in dropped]
 
 
-def _unwind_stored_transaction(db: Session, txn: Transaction) -> str:
+def _unwind_stored_transaction(db: Session, txn: Transaction) -> None:
     """Removes a transaction that turned out to be half of a transfer.
 
     Its batch's `cash_delta` and `imported_count` are corrected as it goes:
     `services/batches.delete_batch` reverses a batch using that stored delta,
     so leaving it describing a transaction that no longer exists would make a
     later undo move the cash balance by the wrong amount.
-
-    Returns the month key that needs its snapshot recomputed.
     """
-    month_key = month_key_from_date(txn.date)
     effect = txn.amount if txn.category.kind == "income" else -txn.amount
 
     if txn.import_batch_id:
@@ -263,10 +260,9 @@ def _unwind_stored_transaction(db: Session, txn: Transaction) -> str:
 
     db.delete(txn)
     db.flush()
-    return month_key
 
 
-def _pair_against_ledger(db: Session, rows: list[_PlaidRow]) -> tuple[list[_PlaidRow], set[str]]:
+def _pair_against_ledger(db: Session, rows: list[_PlaidRow]) -> list[_PlaidRow]:
     """Drops transfer rows whose other half is already in the ledger.
 
     `_drop_internal_transfers` only sees one sync's worth of rows, which is
@@ -275,10 +271,9 @@ def _pair_against_ledger(db: Session, rows: list[_PlaidRow]) -> tuple[list[_Plai
     new card replays its whole history at once, so its credits land long after
     the matching payments were stored. Those stored halves are removed here.
 
-    Returns the surviving rows and the months whose snapshots went stale.
+    Returns the surviving rows.
     """
     kept: list[_PlaidRow] = []
-    touched_months: set[str] = set()
     consumed: set[int] = set()
 
     for row in rows:
@@ -312,17 +307,17 @@ def _pair_against_ledger(db: Session, rows: list[_PlaidRow]) -> tuple[list[_Plai
             continue
 
         consumed.add(match.id)
-        touched_months.add(_unwind_stored_transaction(db, match))
+        _unwind_stored_transaction(db, match)
 
-    return kept, touched_months
+    return kept
 
 
 def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     """Pulls new transactions for one linked item and posts them to the ledger.
 
     Returns `None` when there was nothing new to apply. One commit covers the
-    batch, its transactions, the cash delta, every touched month's snapshot
-    and the advanced sync cursor together — a crash mid-run leaves the cursor
+    batch, its transactions, the cash delta and the advanced sync cursor
+    together — a crash mid-run leaves the cursor
     unmoved, so the next run safely re-fetches the same page instead of
     skipping it.
     """
@@ -346,7 +341,7 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     rows = _drop_transfers_into_investments(item, rows)
     # Then against transfers already stored — the other half may have arrived
     # in an earlier sync, from a different linked institution.
-    rows, unwound_months = _pair_against_ledger(db, rows)
+    rows = _pair_against_ledger(db, rows)
 
     mapping, kinds = _category_lookup(db)
     remaining_existing = existing_transaction_counts(db, [r.date for r in rows])
@@ -362,10 +357,6 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
         accepted.append((row, category_id, kind))
 
     if not accepted:
-        # Nothing new to add, but unwinding a stored transfer still moved cash
-        # and invalidated that month's snapshot.
-        for month_key in sorted(unwound_months):
-            networth.upsert_snapshot(db, month_key)
         item.cursor = cursor
         item.last_synced_at = datetime.now(timezone.utc)
         item.status = "active"
@@ -386,10 +377,8 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
     db.flush()  # Claims the batch id before any transaction is written.
 
     cash_delta = ZERO
-    month_keys: set[str] = set()
     for row, category_id, kind in accepted:
         month_key = month_key_from_date(row.date)
-        month_keys.add(month_key)
         amount = round_cents(abs(row.amount))
         create_transaction(
             db,
@@ -409,10 +398,7 @@ def sync_item(db: Session, item: PlaidItem) -> ImportResult | None:
 
     networth.apply_cash_effect(db, cash_delta)
 
-    total = ZERO
-    # Unwound months too: removing a stored transfer changed their totals.
-    for month_key in sorted(month_keys | unwound_months):
-        total = networth.upsert_snapshot(db, month_key)
+    total, _ = networth.compute_totals(db)
 
     item.cursor = cursor
     item.last_synced_at = datetime.now(timezone.utc)

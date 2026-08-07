@@ -13,7 +13,6 @@ from app.models.import_batch import ImportBatch
 from app.models.plaid_category_map import PlaidCategoryMap
 from app.models.plaid_item import PlaidItem
 from app.models.price_quote import PriceQuote
-from app.models.snapshot import NetWorthSnapshot
 from app.models.transaction import Transaction
 
 __all__ = [
@@ -23,7 +22,6 @@ __all__ = [
     "DailyNetWorth",
     "Holding",
     "ImportBatch",
-    "NetWorthSnapshot",
     "PlaidCategoryMap",
     "PlaidItem",
     "PriceQuote",

@@ -19,17 +19,11 @@ class AllocationSliceOut(CamelModel):
     percent: Percent
 
 
-class NetWorthPointOut(CamelModel):
-    month_key: str
-    total: Money
-
-
 class NetWorthSummaryOut(CamelModel):
     total: Money
     as_of: date
     #: Against the same date one month back, not the previous month's close.
     change_vs_month_ago: NetWorthChangeOut | None = None
-    history: list[NetWorthPointOut]
     allocation: list[AllocationSliceOut]
 
 

@@ -6,10 +6,7 @@
  * cash also moves the dashboard total.
  */
 
-import type { Category, Holding, NetWorthPoint, StockModel, StockPeriod, Transaction } from '../types'
-
-/** The month the latest net worth snapshot belongs to. */
-export const CURRENT_SNAPSHOT_MONTH = '2026-07'
+import type { Category, Holding, StockModel, StockPeriod, Transaction } from '../types'
 
 export const SEED_CATEGORIES: Category[] = [
   { id: 'cat-main-income', name: 'Main income', kind: 'income', sortOrder: 0 },
@@ -249,27 +246,6 @@ export const SEED_HOLDINGS: Array<
 export const SEED_CASH_BALANCE = 28450
 export const SEED_BONDS_BALANCE = 12300
 
-/**
- * Snapshots for months before `CURRENT_SNAPSHOT_MONTH`. The current month's
- * point is computed live from holdings + cash + bonds, so imports move it.
- *
- * Net worth history predates the ledger start on purpose — snapshots and
- * transactions are independent records.
- */
-export const SEED_NET_WORTH_HISTORY: NetWorthPoint[] = [
-  { monthKey: '2026-01', total: 88420 },
-  { monthKey: '2026-02', total: 90150 },
-  { monthKey: '2026-03', total: 89280 },
-  { monthKey: '2026-04', total: 93640 },
-  { monthKey: '2026-05', total: 96910 },
-  { monthKey: '2026-06', total: 99780 },
-]
-
-/**
- * Chase export category -> Custodian category id. The backend will hold this
- * in a configurable table; anything missing falls through to "Other" and is
- * flagged for review in the import preview.
- */
 // ---------------------------------------------------------------------------
 // Stock models (3-statement + DCF)
 // ---------------------------------------------------------------------------

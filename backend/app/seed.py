@@ -21,7 +21,6 @@ from app.models import (
     Account,
     Category,
     Holding,
-    NetWorthSnapshot,
     PlaidCategoryMap,
     Transaction,
 )
@@ -121,15 +120,6 @@ DEMO_HOLDINGS = [
     ("SCHD", "Schwab US Dividend Equity ETF", "70", "79.10"),
 ]
 
-DEMO_SNAPSHOTS = [
-    ("2026-01", "88420"),
-    ("2026-02", "90150"),
-    ("2026-03", "89280"),
-    ("2026-04", "93640"),
-    ("2026-05", "96910"),
-    ("2026-06", "99780"),
-]
-
 
 def seed_demo(db: Session) -> None:
     if db.scalar(select(Transaction).limit(1)) is None:
@@ -163,21 +153,6 @@ def seed_demo(db: Session) -> None:
         cash.balance = Decimal("28450.00")
     if bonds is not None and bonds.balance == 0:
         bonds.balance = Decimal("12300.00")
-
-    for month_key, total in DEMO_SNAPSHOTS:
-        existing = db.scalar(
-            select(NetWorthSnapshot).where(NetWorthSnapshot.month_key == month_key)
-        )
-        if existing is None:
-            year, month = month_key.split("-")
-            db.add(
-                NetWorthSnapshot(
-                    month_key=month_key,
-                    as_of=date(int(year), int(month), 28),
-                    total=Decimal(total),
-                    breakdown={},
-                )
-            )
 
     db.commit()
 

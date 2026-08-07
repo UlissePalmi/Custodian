@@ -1,9 +1,8 @@
 """Net worth and holdings.
 
-Mirrors the mock's `readNetWorth` / `readHoldings`: nothing aggregate is
-stored for the current month. Stored snapshots cover past months only, and the
-live point is recomputed from holdings + account balances on every read — which
-is why a confirmed import moves the dashboard immediately.
+Nothing aggregate is stored: the total is recomputed from holdings and account
+balances on every read, which is why a sync moves the dashboard immediately.
+History is kept a day at a time by `services/history.py`.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -13,9 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
-from app.models import Account, DailyNetWorth, Holding, NetWorthSnapshot, PriceQuote
+from app.models import Account, DailyNetWorth, Holding, PriceQuote
 from app.money import ZERO, percent_of, round_cents
-from app.months import compare_month_keys, current_snapshot_month, days_in_month, to_month_key
+from app.months import days_in_month, to_month_key
 from app.services.quotes import get_quotes
 
 #: Asset classes the dashboard always shows, even at zero.
@@ -289,7 +288,6 @@ def _change_vs_month_ago(db: Session, total: Decimal, today: date) -> dict | Non
 
 def read_net_worth(db: Session, today: date | None = None) -> dict:
     today = today or date.today()
-    current_month = current_snapshot_month(today)
     total, breakdown = compute_totals(db)
 
     allocation = [
@@ -308,34 +306,9 @@ def read_net_worth(db: Session, today: date | None = None) -> dict:
         )
     ]
 
-    # Stored snapshots for past months; the current month is always live.
-    history = [
-        {"month_key": snapshot.month_key, "total": snapshot.total}
-        for snapshot in db.scalars(select(NetWorthSnapshot).order_by(NetWorthSnapshot.month_key))
-        if compare_month_keys(snapshot.month_key, current_month) < 0
-    ]
-    history.append({"month_key": current_month, "total": total})
-
-    change = _change_vs_month_ago(db, total, today)
-
     return {
         "total": total,
         "as_of": today,
-        "change_vs_month_ago": change,
-        "history": history,
+        "change_vs_month_ago": _change_vs_month_ago(db, total, today),
         "allocation": allocation,
     }
-
-
-def upsert_snapshot(db: Session, month_key: str, today: date | None = None) -> Decimal:
-    """Records net worth for `month_key`. Returns the total written."""
-    total, breakdown = compute_totals(db)
-    snapshot = db.scalar(select(NetWorthSnapshot).where(NetWorthSnapshot.month_key == month_key))
-    if snapshot is None:
-        snapshot = NetWorthSnapshot(month_key=month_key)
-        db.add(snapshot)
-    snapshot.as_of = today or date.today()
-    snapshot.total = total
-    snapshot.breakdown = {key: float(value) for key, value in breakdown.items()}
-    db.flush()
-    return total

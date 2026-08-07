@@ -176,7 +176,6 @@ def create_transaction(
     # it for itself, one transaction at a time.
     if source == "manual":
         networth.apply_cash_effect(db, _cash_effect(category.kind, amount))
-        networth.upsert_snapshot(db, month_key)
 
     if commit:
         db.commit()
@@ -191,7 +190,6 @@ def update_transaction(db: Session, transaction_id: int, payload: TransactionInp
     if transaction is None:
         raise ApiError("Transaction not found.", 404)
 
-    old_month_key = month_key_from_date(transaction.date)
     old_effect = _cash_effect(transaction.category.kind, transaction.amount)
 
     amount, description, category = _validate_input(db, payload)
@@ -201,12 +199,8 @@ def update_transaction(db: Session, transaction_id: int, payload: TransactionInp
     transaction.category_id = category.id
 
     if transaction.source == "manual":
-        new_month_key = month_key_from_date(payload.date)
         new_effect = _cash_effect(category.kind, amount)
         networth.apply_cash_effect(db, -old_effect + new_effect)
-        networth.upsert_snapshot(db, old_month_key)
-        if new_month_key != old_month_key:
-            networth.upsert_snapshot(db, new_month_key)
 
     db.commit()
     db.refresh(transaction)
@@ -218,17 +212,11 @@ def delete_transaction(db: Session, transaction_id: int) -> None:
     if transaction is None:
         raise ApiError("Transaction not found.", 404)
 
-    is_manual = transaction.source == "manual"
-    if is_manual:
-        month_key = month_key_from_date(transaction.date)
+    if transaction.source == "manual":
         effect = _cash_effect(transaction.category.kind, transaction.amount)
         networth.apply_cash_effect(db, -effect)
 
     db.delete(transaction)
-    db.flush()
-
-    if is_manual:
-        networth.upsert_snapshot(db, month_key)
     db.commit()
 
 
