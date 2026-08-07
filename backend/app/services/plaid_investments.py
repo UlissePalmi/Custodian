@@ -10,10 +10,12 @@ Only positions Plaid can see are touched. Anything held where Plaid has no
 visibility stays `source='manual'` and is left alone — see `models/holding.py`.
 """
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+from plaid.model.investments_refresh_request import InvestmentsRefreshRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +25,8 @@ from app.models import Account, Holding, PlaidItem
 from app.money import ZERO
 from app.services.crypto import decrypt_token
 from app.services.plaid_client import get_plaid_client
+
+log = logging.getLogger(__name__)
 
 #: Plaid security types that are positions rather than balances. Cash-like
 #: rows (a sweep fund, an unsettled negative balance) describe money sitting
@@ -82,6 +86,25 @@ def _first_bought(item: PlaidItem) -> dict[str, date]:
     return earliest
 
 
+def _request_refresh(access_token: str) -> None:
+    """Asks Plaid to re-fetch positions from the institution.
+
+    Holdings are not pulled on demand the way transactions are: without this,
+    `investments_holdings_get` serves whatever Plaid last happened to collect,
+    which can be a day or more stale and silently omits trades made since. It
+    is a hint rather than a guarantee — Plaid answers immediately and updates
+    behind the scenes — so the read below may still return the previous view
+    and pick the trade up on the following run. Best-effort: an institution
+    that does not support it must not fail the sync.
+    """
+    try:
+        get_plaid_client().investments_refresh(
+            InvestmentsRefreshRequest(access_token=access_token)
+        )
+    except Exception:
+        log.info("investments refresh unavailable for this item", exc_info=True)
+
+
 def sync_holdings(db: Session, item: PlaidItem) -> int:
     """Replaces this item's synced positions with what Plaid reports now.
 
@@ -90,8 +113,10 @@ def sync_holdings(db: Session, item: PlaidItem) -> int:
     positions that were there before.
     """
     client = get_plaid_client()
+    access_token = decrypt_token(item.access_token_encrypted)
+    _request_refresh(access_token)
     response = client.investments_holdings_get(
-        InvestmentsHoldingsGetRequest(access_token=decrypt_token(item.access_token_encrypted))
+        InvestmentsHoldingsGetRequest(access_token=access_token)
     )
 
     securities = {s.security_id: s for s in response.securities}

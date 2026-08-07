@@ -221,3 +221,50 @@ def test_a_real_failure_is_recorded(monkeypatch, db: Session, plaid_item: PlaidI
     db.refresh(plaid_item)
     assert plaid_item.status == "error"
     assert plaid_item.last_error is not None
+
+
+def test_a_refresh_is_requested_before_reading(monkeypatch, db: Session, plaid_item: PlaidItem) -> None:
+    """Holdings are not pulled on demand the way transactions are, so without
+    asking Plaid to re-fetch, a trade made today is silently absent."""
+    calls: list[str] = []
+
+    class Recording(FakeInvestmentsClient):
+        def investments_refresh(self, request):  # noqa: ANN001 - test double
+            calls.append("refresh")
+
+        def investments_holdings_get(self, request):  # noqa: ANN001 - test double
+            calls.append("get")
+            return super().investments_holdings_get(request)
+
+    client = Recording(
+        FakeHoldingsResponse(
+            [FakeHolding("sec-1", 200.0, 1136.30)],
+            [FakeSecurity("sec-1", "STLA", "Stellantis NV", "equity")],
+        )
+    )
+    monkeypatch.setattr(plaid_investments, "get_plaid_client", lambda: client)
+
+    plaid_investments.sync_holdings(db, plaid_item)
+
+    assert calls == ["refresh", "get"]
+    assert plaid_rows(db)[0].quantity == Decimal("200")
+
+
+def test_an_unsupported_refresh_does_not_fail_the_sync(
+    monkeypatch, db: Session, plaid_item: PlaidItem
+) -> None:
+    """Not every institution supports it; positions must still sync."""
+
+    class Refusing(FakeInvestmentsClient):
+        def investments_refresh(self, request):  # noqa: ANN001 - test double
+            raise RuntimeError("not supported here")
+
+    client = Refusing(
+        FakeHoldingsResponse(
+            [FakeHolding("sec-1", 150.0)],
+            [FakeSecurity("sec-1", "STLA", "Stellantis NV", "equity")],
+        )
+    )
+    monkeypatch.setattr(plaid_investments, "get_plaid_client", lambda: client)
+
+    assert plaid_investments.sync_holdings(db, plaid_item) == 1
