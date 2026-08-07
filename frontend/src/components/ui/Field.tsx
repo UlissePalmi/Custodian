@@ -41,15 +41,3 @@ export function SelectField({ label, id, className = '', children, ...props }: S
     </div>
   )
 }
-
-/** Bare select for use inside dense table rows, where a label would not fit. */
-export function InlineSelect({ className = '', children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      className={`h-8 w-full rounded-md border border-terminal-navy/20 bg-white px-2 text-xs text-terminal-navy ${className}`}
-      {...props}
-    >
-      {children}
-    </select>
-  )
-}

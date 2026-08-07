@@ -49,10 +49,6 @@ def is_within_ledger_range(key: str) -> bool:
     )
 
 
-def shift_month_key(key: str, delta: int) -> str | None:
-    nxt = _from_month_index(_month_index(key) + delta)
-    return nxt if is_within_ledger_range(nxt) else None
-
 
 def month_key_range(start: str = LEDGER_START, end: str = LEDGER_END) -> list[str]:
     return [_from_month_index(i) for i in range(_month_index(start), _month_index(end) + 1)]
@@ -72,10 +68,6 @@ def days_in_month(key: str) -> int:
     year, month = parse_month_key(key)
     return monthrange(year, month)[1]
 
-
-def iso_date_in(month_key: str, day: int) -> str:
-    clamped = min(max(day, 1), days_in_month(month_key))
-    return f"{month_key}-{clamped:02d}"
 
 
 def current_snapshot_month(today: date | None = None) -> str:

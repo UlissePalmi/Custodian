@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Holding, PriceQuote
+from app.models import PriceQuote
 from app.money import round_cents
 
 log = logging.getLogger(__name__)
@@ -256,9 +256,6 @@ def _fetch_yfinance(ticker: str) -> tuple[Decimal | None, Decimal | None]:
     ytd = round_cents((last - first) / first * 100) if first > 0 else None
     return round_cents(last).quantize(Decimal("0.0001")), ytd
 
-
-def held_tickers(db: Session) -> list[str]:
-    return sorted({t for t in db.scalars(select(Holding.ticker))})
 
 
 # --------------------------------------------------------------------------
