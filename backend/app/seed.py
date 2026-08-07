@@ -1,29 +1,26 @@
-"""Seed the database.
+"""Seed the database with the reference data the app cannot run without.
 
-Run without arguments for a real, empty ledger: categories, the Plaid category
-mapping and zero-balance Cash/Bonds accounts — nothing else. `--demo` adds the
-front end's fixture data, which is only useful for comparing the API against
-the mock.
+Not sample data — every row here is required. Transactions carry a category
+foreign key, so an empty `categories` table means nothing can be written; the
+sync reads its category mapping from `plaid_category_map` rather than from the
+dict below; and `networth.get_cash_account` and
+`plaid_investments.get_brokerage_account` both refuse to work with no account
+to point at.
+
+Safe to re-run: every insert is guarded by an existence check, so it only
+fills in what is missing. The test suite relies on that, calling `seed_base`
+before every test.
 
     python -m app.seed
-    python -m app.seed --demo
 """
 
-import argparse
-from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import (
-    Account,
-    Category,
-    Holding,
-    PlaidCategoryMap,
-    Transaction,
-)
+from app.models import Account, Category, PlaidCategoryMap
 
 CATEGORIES = [
     ("cat-main-income", "Main income", "income", 0),
@@ -84,92 +81,10 @@ def seed_base(db: Session) -> None:
     db.commit()
 
 
-# --------------------------------------------------------------------------
-# Demo data — mirrors src/api/mock/seed.ts so the API can be diffed against the
-# mock screen by screen.
-# --------------------------------------------------------------------------
-
-DEMO_TRANSACTIONS = [
-    ("2026-07-01", "3200", "Paycheck — first half", "cat-main-income"),
-    ("2026-07-15", "3200", "Paycheck — second half", "cat-main-income"),
-    ("2026-07-08", "850", "Freelance — landing page build", "cat-secondary-income"),
-    ("2026-07-01", "1850", "July rent", "cat-rent"),
-    ("2026-07-03", "92.40", "Con Edison — electric", "cat-utilities"),
-    ("2026-07-05", "65", "Verizon", "cat-phone"),
-    ("2026-07-04", "128.75", "Trader Joe's", "cat-groceries"),
-    ("2026-07-11", "94.20", "Whole Foods", "cat-groceries"),
-    ("2026-07-18", "112.60", "Trader Joe's", "cat-groceries"),
-    ("2026-07-06", "78", "Sushi with M.", "cat-dining"),
-    ("2026-07-12", "42.30", "Coffee + brunch", "cat-dining"),
-    ("2026-07-19", "31.50", "Thai takeout", "cat-dining"),
-    ("2026-07-02", "132", "MTA monthly", "cat-transport"),
-    ("2026-07-14", "23.80", "Uber — airport", "cat-transport"),
-    ("2026-07-01", "11.99", "Spotify", "cat-subscriptions"),
-    ("2026-07-02", "9.99", "iCloud 2TB", "cat-subscriptions"),
-    ("2026-07-07", "15.49", "Netflix", "cat-subscriptions"),
-    ("2026-07-09", "45", "Dentist copay", "cat-other"),
-    ("2026-07-16", "60", "Birthday gift", "cat-other"),
-]
-
-DEMO_HOLDINGS = [
-    ("VOO", "Vanguard S&P 500 ETF", "42", "465.20"),
-    ("AAPL", "Apple Inc.", "60", "178.50"),
-    ("MSFT", "Microsoft Corp.", "25", "372.80"),
-    ("NVDA", "NVIDIA Corp.", "30", "118.40"),
-    ("VXUS", "Vanguard Total International Stock ETF", "85", "61.30"),
-    ("SCHD", "Schwab US Dividend Equity ETF", "70", "79.10"),
-]
-
-
-def seed_demo(db: Session) -> None:
-    if db.scalar(select(Transaction).limit(1)) is None:
-        for iso_date, amount, description, category_id in DEMO_TRANSACTIONS:
-            db.add(
-                Transaction(
-                    date=date.fromisoformat(iso_date),
-                    amount=Decimal(amount),
-                    description=description,
-                    category_id=category_id,
-                    source="manual",
-                )
-            )
-
-    brokerage = db.scalar(select(Account).where(Account.type == "stocks"))
-    if db.scalar(select(Holding).limit(1)) is None and brokerage is not None:
-        for ticker, name, quantity, cost_basis in DEMO_HOLDINGS:
-            db.add(
-                Holding(
-                    ticker=ticker,
-                    name=name,
-                    quantity=Decimal(quantity),
-                    cost_basis_per_share=Decimal(cost_basis),
-                    account_id=brokerage.id,
-                )
-            )
-
-    cash = db.scalar(select(Account).where(Account.type == "cash"))
-    bonds = db.scalar(select(Account).where(Account.type == "bonds"))
-    if cash is not None and cash.balance == 0:
-        cash.balance = Decimal("28450.00")
-    if bonds is not None and bonds.balance == 0:
-        bonds.balance = Decimal("12300.00")
-
-    db.commit()
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed the Custodian database.")
-    parser.add_argument(
-        "--demo", action="store_true", help="also load the mock's fixture data"
-    )
-    args = parser.parse_args()
-
     with SessionLocal() as db:
         seed_base(db)
-        if args.demo:
-            seed_demo(db)
-
-    print("Seeded base data." + (" Demo data loaded." if args.demo else ""))
+    print("Seeded base data.")
 
 
 if __name__ == "__main__":

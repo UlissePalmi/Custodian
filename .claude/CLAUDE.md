@@ -20,7 +20,7 @@ Backend (`backend/`, everything through `.venv/bin/`):
 - `.venv/bin/uvicorn app.main:app --reload --port 8000` — dev server
 - `.venv/bin/python -m pytest` — full suite; `-k <name>` for one test
 - `.venv/bin/alembic revision --autogenerate -m "..."` then `.venv/bin/alembic upgrade head`
-- `.venv/bin/python -m app.seed [--demo]` — categories, Plaid category mapping, empty accounts; `--demo` adds the mock's fixture data
+- `.venv/bin/python -m app.seed` — categories, Plaid category mapping, empty accounts. Required reference data, not samples; safe to re-run, and the test suite runs it before every test
 
 Tests need the `custodian_test` database (they truncate it between tests — never point `TEST_DATABASE_URL` at the real one).
 

@@ -37,8 +37,8 @@ cp .env.example .env          # then edit DATABASE_URL if you changed the passwo
 .venv/bin/python -m app.seed  # categories, Plaid category mapping, empty Cash/Bonds/Brokerage accounts
 ```
 
-Add `--demo` to the seed command to load the front end's fixture data instead of
-starting empty. Only useful for comparing the API against the mock.
+The seed only ever fills in what is missing, so it is safe to re-run after a
+migration adds something.
 
 ## 3. Front end
 
